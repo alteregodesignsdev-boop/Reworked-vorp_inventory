@@ -1,5 +1,5 @@
 ConfigItems = {
-	enabled = true,
+	enabled = false,
 	items = {
 		-- Tiendas generales
 		{

@@ -27,7 +27,7 @@ body {
     z-index: 10;
 }
 
-/* #title {
+#title {
     position: absolute;
     font-family: "crock";
     text-align: center;
@@ -38,19 +38,19 @@ body {
     transform: translateX(-50%);
     z-index: 10;
 
-} */
+}
 
 
-#inventoryHud, 
+#inventoryHud,
 #disabler {
-    min-width: 85.1vh;
-    min-height: 91vh;
+    min-width: 46.7vw;
+    min-height: 90vh;
     overflow: hidden;
     position: absolute;
-    background-image: url("../img/bgPanel.png");
+    background-image: url(../img/bgPanel.png);
     background-repeat: no-repeat;
-    background-position: center center;
-    background-size: 57vh 82vh;
+    background-position: center;
+    background-size: 27.5vw 74vh;
     z-index: -100;
     opacity: 0.94;
 }
@@ -182,11 +182,12 @@ body {
 #inventoryElement {
     position: absolute;
     top: 22.3vh;
-    left: 12vw;
+    left: 12.0vw;
     width: 24vw;
     height: 36.2vh;
     border-color: rgba(15, 15, 15, 0);
-    overflow: hidden scroll;
+    overflow-y: scroll;
+    overflow-x: hidden;
     z-index: 1;
 }
 
@@ -256,7 +257,7 @@ body {
 #information {
     text-align: center;
     position: absolute;
-    top: 59.9vh;
+    top: 58.9vh;
     left: 23.6vw;
     transform: translateX(-50%);
     width: 15vw;
@@ -269,10 +270,10 @@ body {
 #description {
     text-align: center;
     position: absolute;
-    top: 65.6vh;
+    top: 62.6vh;
     font-size: 0.7vw;
     color: white;
-    overflow-wrap: break-word;
+    word-wrap: break-word;
     width: 17vw;
     height: 8vh;
     left: 15.2vw;
@@ -435,8 +436,6 @@ body {
 }
 
 .carouselContainer {
-    position: relative;
-    top: -4vh;
     align-items: center;
     display: flex;
     flex-direction: column;
@@ -580,12 +579,9 @@ body {
 }
 
 .controls #close {
-    position: relative;
-    top: -3.3vh;
-    left: 3vh;
     float: right;
     width: 1vw;
-    color: rgb(255, 255, 255);
+    color: #ffffff;
 }
 
 .controls #close:hover {
@@ -595,11 +591,11 @@ body {
 /*capacity*/
 .controls #check {
     position: absolute;
-    left: 8.5vh;
-    top: -1vh;
+    left: 54%;
+    top: 50%;
     transform: translate(-50%, -50%);
-    color: rgb(255, 255, 255);
-    font-size: -0.1vw;
+    color: #ffffff;
+    font-size: 0.9vw;
     text-align: center;
     white-space: nowrap;
 }
@@ -615,14 +611,12 @@ button {
     font-size: 0.8vw;
 }
 
-input#search, input#secondarysearch {
-    position: relative;
-    top: -3.4vh;
-    left: -6vh;
+input#search,
+input#secondarysearch {
     background: transparent;
     border: none;
     padding-left: 20px;
-    font-family: crock;
+    font-family: "crock";
     font-size: 0.8vw;
     color: white;
 }
