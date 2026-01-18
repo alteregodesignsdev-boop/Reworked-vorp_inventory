@@ -15,6 +15,9 @@ New config_items.lua: Faster item creation. The system now automatically assigns
 
 Hot Reload Safe: Support has been enabled to run /ensure with players in-game (IC) without breaking the inventory.
 
+🛡️ Security & Fixes
+Critical Exploit Patched: Fixed a critical issue where items could be dumped/exploited using dev-tools.
+
 🔄 Other Changes
 Functional adjustments to shared inventories.
 
