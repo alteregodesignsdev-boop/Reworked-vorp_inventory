@@ -1,0 +1,94 @@
+/* Quickslots HUD - posición editable mediante variables CSS y clases de anclaje */
+/* Edita los valores en :root para ajustar posición, tamaño y columnas */
+
+:root {
+    --qs-top: 92vh;
+    --qs-right: 41.5vw;
+    --qs-bottom: auto;
+    --qs-left: auto;
+    --qs-columns: 4;
+    --qs-size: 7vh;
+    --qs-gap: 2vh;
+    --qs-scale: 1;
+    --qs-enter-duration: 240ms;     /* duración animación contenedor */
+    --qs-slot-duration: 280ms;      /* duración animación de cada slot */
+    --qs-enter-shift: 1.0vh;        /* desplazamiento vertical inicial */
+}
+
+/* Contenedor del HUD de quickslots */
+#quickslotHud {
+  position: fixed;
+  top: var(--qs-top);
+  right: var(--qs-right);
+  bottom: var(--qs-bottom);
+  left: var(--qs-left);
+  display: none; /* se muestra como grid desde JS */
+  grid-template-columns: repeat(var(--qs-columns), var(--qs-size));
+  gap: var(--qs-gap);
+  z-index: 10000;
+  pointer-events: none;
+  transform: scale(var(--qs-scale));
+}
+
+/* Clases de anclaje: cambia esquina sin tocar variables */
+#quickslotHud.qs-top-right { top: var(--qs-top); right: var(--qs-right); bottom: auto; left: auto; }
+#quickslotHud.qs-top-left  { top: var(--qs-top); left: var(--qs-left, 2vw); bottom: auto; right: auto; }
+#quickslotHud.qs-bottom-right { bottom: var(--qs-bottom, 8vh); right: var(--qs-right); top: auto; left: auto; }
+#quickslotHud.qs-bottom-left  { bottom: var(--qs-bottom, 8vh); left: var(--qs-left, 2vw); top: auto; right: auto; }
+
+/* Estilo de cada slot */
+#quickslotHud .qs-slot {
+  width: var(--qs-size);
+  height: var(--qs-size);
+  background: rgba(0,0,0,0.35) center/contain no-repeat;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 4px;
+  position: relative;
+}
+
+/* Contador de cada slot */
+#quickslotHud .qs-count {
+  position: absolute;
+  bottom: calc(-0.8vh * var(--qs-scale));
+  right:  calc(-0.8vh * var(--qs-scale));
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: calc(1.6vh * var(--qs-scale));
+  padding: 0 .5vh;
+  border-radius: 2px;
+  min-width: 2vh;
+  text-align: center;
+}
+
+/* Animación de aparición del HUD */
+@keyframes qsHudEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--qs-enter-shift))) scale(var(--qs-scale));
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(var(--qs-scale));
+    filter: blur(0);
+  }
+}
+
+#quickslotHud.qs-animate-enter {
+  animation: qsHudEnter var(--qs-enter-duration) ease-out both;
+  will-change: transform, opacity;
+}
+
+/* Animación de los slots con pequeño efecto pop/stagger */
+@keyframes qsSlotPop {
+  0% { opacity: 0; transform: scale(0.92); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+#quickslotHud.qs-animate-enter .qs-slot {
+  animation: qsSlotPop var(--qs-slot-duration) ease-out both;
+}
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(1) { animation-delay: 40ms; }
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(2) { animation-delay: 80ms; }
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(3) { animation-delay: 120ms; }
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(4) { animation-delay: 160ms; }
