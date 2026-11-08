@@ -106,6 +106,27 @@
 
     // Función para dar dinero
     function giveMoneyPrompt(maxAmount, item) {
+        if (typeof window.showInlineQuantityPanel === 'function') {
+            window.showInlineQuantityPanel({
+                mode: 'give',
+                title: LANGUAGE.toplayerpromptitle || "DAR DINERO",
+                max: maxAmount,
+                defaultVal: 1,
+                isFloat: true,
+                onConfirm: function(amount) {
+                    if (amount && amount > 0 && amount <= maxAmount) {
+                        secureCallbackToNui("vorp_inventory", "GetNearPlayers", {
+                            item: item.name || item.item,
+                            type: "item_money",
+                            count: amount,
+                            what: "give"
+                        });
+                    }
+                }
+            });
+            return;
+        }
+
         dialog.prompt({
             title: LANGUAGE.toplayerpromptitle || "How much money do you want to give?",
             button: LANGUAGE.toplaterpromptaccept || "Give",
@@ -135,6 +156,27 @@
 
     // Función para dropear dinero
     function dropMoneyPrompt(maxAmount, item) {
+        if (typeof window.showInlineQuantityPanel === 'function') {
+            window.showInlineQuantityPanel({
+                mode: 'drop',
+                title: LANGUAGE.prompttitle || "SOLTAR DINERO",
+                max: maxAmount,
+                defaultVal: 1,
+                isFloat: true,
+                onConfirm: function(amount) {
+                    if (amount && amount > 0 && amount <= maxAmount) {
+                        secureCallbackToNui("vorp_inventory", "DropItem", {
+                            item: item.name || item.item,
+                            type: "item_money",
+                            number: amount,
+                            id: item.id || ("currency_" + (item.name || item.item))
+                        });
+                    }
+                }
+            });
+            return;
+        }
+
         dialog.prompt({
             title: LANGUAGE.prompttitle || "How much money do you want to drop?",
             button: LANGUAGE.promptaccept || "Drop",
@@ -164,6 +206,25 @@
 
     // Función para empaquetar dinero en un sobre
     function packMoneyPrompt(maxAmount, item) {
+        if (typeof window.showInlineQuantityPanel === 'function') {
+            window.showInlineQuantityPanel({
+                mode: 'pack',
+                title: LANGUAGE.packenvelope || "METER EN SOBRE",
+                max: maxAmount,
+                defaultVal: maxAmount,
+                isFloat: true,
+                onConfirm: function(amount) {
+                    if (amount && amount > 0 && amount <= maxAmount) {
+                        secureCallbackToNui("vorp_inventory", "PackMoney", {
+                            amount: amount,
+                            currency: item.name || item.item
+                        });
+                    }
+                }
+            });
+            return;
+        }
+
         dialog.prompt({
             title: LANGUAGE.packenvelope || "Confirma la cantidad que quiere guardar",
             button: LANGUAGE.packenvelope || "Meter en sobre",

@@ -186,6 +186,9 @@ function NUIService.NUIUnequipWeapon(obj)
 	NUIService.LoadInv()
 end
 
+local isTargetingPlayer = false
+local targetingThreadRunning = false
+
 function NUIService.NUIGetNearPlayers(obj)
 	local nearestPlayers = Utils.getNearestPlayers()
 
@@ -194,24 +197,30 @@ function NUIService.NUIGetNearPlayers(obj)
 		if player ~= PlayerId() then
 			local playerId = GetPlayerServerId(player)
 			if Config.ShowCharacterNameOnGive then
-				local name = Player(playerId).state.Character.FirstName .. " " .. Player(playerId).state.Character.LastName
+				local state = Player(playerId).state
+				local name = (state and state.Character and state.Character.FirstName) and (state.Character.FirstName .. " " .. state.Character.LastName) or tostring(playerId)
 				playerIds[#playerIds + 1] = { label = name, player = playerId }
 			else
-				playerIds[#playerIds + 1] = { label = playerId, player = playerId }
+				playerIds[#playerIds + 1] = { label = tostring(playerId), player = playerId }
 			end
 		end
 	end
 	if #playerIds > 0 then
-		NUIService.NUISetNearPlayers(obj, playerIds)
+		NUIService.Start3DPlayerTargeting(obj, playerIds)
 	else
 		Core.NotifyRightTip(T.noplayersnearby, 5000)
 	end
 end
 
-function NUIService.NUISetNearPlayers(obj, nearestPlayers)
-	local nuiReturn = {}
+function NUIService.Start3DPlayerTargeting(obj, nearestPlayers)
+	isTargetingPlayer = true
 
-	nuiReturn.action = "nearPlayers"
+	if Config.Filter and AnimpostfxIsRunning(Config.Filter) then
+		AnimpostfxStop(Config.Filter)
+	end
+
+	local nuiReturn = {}
+	nuiReturn.action = "startPlayerTargeting"
 	nuiReturn.foundAny = true
 	nuiReturn.players = nearestPlayers
 	nuiReturn.item = obj.item
@@ -220,10 +229,83 @@ function NUIService.NUISetNearPlayers(obj, nearestPlayers)
 	nuiReturn.id = obj.id or 0
 	nuiReturn.type = obj.type
 	nuiReturn.what = obj.what
+	nuiReturn.metadata = obj.metadata
 	SendNUIMessage(nuiReturn)
+
+	if not targetingThreadRunning then
+		targetingThreadRunning = true
+		CreateThread(function()
+			while isTargetingPlayer do
+				Wait(20)
+				if not isTargetingPlayer then break end
+
+				local playerPed = PlayerPedId()
+				local myCoords = GetEntityCoords(playerPed)
+				local activePlayers = Utils.getNearestPlayers()
+				local screenTargets = {}
+
+				for _, player in ipairs(activePlayers) do
+					if player ~= PlayerId() then
+						local targetPed = GetPlayerPed(player)
+						if DoesEntityExist(targetPed) and not IsEntityDead(targetPed) then
+							local targetCoords = GetEntityCoords(targetPed)
+							local dist = #(myCoords - targetCoords)
+							if dist <= 5.0 then
+								local boneIndex = GetEntityBoneIndexByName(targetPed, "SKEL_Spine2")
+								if boneIndex == -1 then
+									boneIndex = GetEntityBoneIndexByName(targetPed, "SKEL_Pelvis")
+								end
+								local bonePos
+								if boneIndex ~= -1 then
+									bonePos = GetWorldPositionOfEntityBone(targetPed, boneIndex)
+								else
+									bonePos = targetCoords + vector3(0.0, 0.0, -0.15)
+								end
+
+								local onScreen, screenX, screenY = GetScreenCoordFromWorldCoord(bonePos.x, bonePos.y, bonePos.z)
+								if onScreen then
+									local sId = GetPlayerServerId(player)
+									local label = tostring(sId)
+									if Config.ShowCharacterNameOnGive then
+										local st = Player(sId).state
+										if st and st.Character and st.Character.FirstName then
+											label = st.Character.FirstName .. " " .. st.Character.LastName
+										end
+									end
+									screenTargets[#screenTargets + 1] = {
+										player = sId,
+										label = label,
+										x = screenX,
+										y = screenY,
+										dist = dist
+									}
+								end
+							end
+						end
+					end
+				end
+
+				SendNUIMessage({
+					action = "updatePlayerTargets",
+					targets = screenTargets
+				})
+			end
+			targetingThreadRunning = false
+		end)
+	end
+end
+
+function NUIService.StopPlayerTargeting(data, cb)
+	isTargetingPlayer = false
+	if cb then cb("ok") end
+end
+
+function NUIService.NUISetNearPlayers(obj, nearestPlayers)
+	NUIService.Start3DPlayerTargeting(obj, nearestPlayers)
 end
 
 function NUIService.NUIGiveItem(obj)
+	isTargetingPlayer = false
 	if not cangive then
 		return Core.NotifyRightTip(T.cantgivehere, 5000)
 	end

@@ -79,14 +79,27 @@ $("document").ready(function () {
 
     $("body").on("keyup", function (key) {
         if (Config.closeKeys.includes(key.which)) {
-            if ($('#character-selection').is(":visible")) {
+            if ($('#player-target-overlay').is(":visible")) {
+                if (typeof cancel3DPlayerTargeting === 'function') {
+                    cancel3DPlayerTargeting();
+                }
+            } else if ($('#character-selection').is(":visible")) {
                 $('#character-selection').hide();
                 $('#disabler').hide();
+            } else if (window.isInlineQtyActive) {
+                window.cancelInlineQty();
             } else {
                 closeInventory();
                 document.querySelectorAll('.dropdownButton[data-type="itemtype"], .dropdownButton1[data-type="itemtype"]').forEach(btn => btn.classList.remove('active'));
                 document.querySelector(`.dropdownButton[data-param="all"][data-type="itemtype"], .dropdownButton1[data-param="all"][data-type="itemtype"]`)?.classList.add('active');
             }
+        }
+    });
+
+    $(document).on('contextmenu', '#player-target-overlay', function(e) {
+        e.preventDefault();
+        if (typeof cancel3DPlayerTargeting === 'function') {
+            cancel3DPlayerTargeting();
         }
     });
 
@@ -708,9 +721,21 @@ window.addEventListener('message', function (event) {
         if (typeof window.updateWeightDisplay === 'function') {
             window.updateWeightDisplay();
         }
+    } else if (event.data.action == "startPlayerTargeting") {
+        if (typeof start3DPlayerTargeting === 'function') {
+            start3DPlayerTargeting(event.data);
+        }
+    } else if (event.data.action == "updatePlayerTargets") {
+        if (typeof update3DPlayerTargets === 'function') {
+            update3DPlayerTargets(event.data.targets);
+        }
     } else if (event.data.action == "nearPlayers") {
         if (event.data.what == "give") {
-            selectPlayerToGive(event.data);
+            if (typeof start3DPlayerTargeting === 'function') {
+                start3DPlayerTargeting(event.data);
+            } else {
+                selectPlayerToGive(event.data);
+            }
         }
     }
 });

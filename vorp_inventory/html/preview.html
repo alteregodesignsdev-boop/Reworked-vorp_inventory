@@ -224,6 +224,11 @@
         </div>
     </div>
 
+    <!-- Overlay de selección de jugador en el mundo 3D -->
+    <div id="player-target-overlay" style="display: none;">
+        <div id="player-target-markers"></div>
+    </div>
+
     <!-- ── SCRIPTS ───────────────────────────────────────────────────────── -->
     <script src="js/vendor/jquery-3.3.1.min.js"></script>
     <script>
@@ -414,6 +419,20 @@
                 btn.setAttribute('data-key', key);
                 btn.innerHTML = '<span class="panel-action-key">' + key + '</span><span class="panel-action-text">' + text + '</span>';
                 btn.dataset.text = text;
+                btn.onclick = () => {
+                    if (text === 'DAR' || text === 'TIRAR' || text === 'DAR DINERO' || text === 'SOLTAR DINERO' || text === 'EMPAQUETAR') {
+                        previewShowInlineQty({
+                            mode: (text.includes('TIRAR') || text.includes('SOLTAR')) ? 'drop' : (text.includes('SOBRE') || text.includes('EMPAQUETAR') ? 'pack' : 'give'),
+                            title: text === 'TIRAR' ? 'TIRAR AL SUELO' : (text === 'DAR' ? 'DAR A JUGADOR' : text),
+                            max: item.count || 10,
+                            defaultVal: 1,
+                            onConfirm: (q) => { console.log('Confirmed qty:', q); previewClearItem(); },
+                            onCancel: () => { previewHoverItem(window.currentPreviewIndex !== undefined ? window.currentPreviewIndex : 0); }
+                        });
+                    } else {
+                        console.log('Action clicked:', text);
+                    }
+                };
                 container.appendChild(btn);
             });
 
@@ -441,8 +460,68 @@
             }
         }
 
+        window.isPreviewInlineQtyActive = false;
+        function previewShowInlineQty(options) {
+            window.isPreviewInlineQtyActive = true;
+            const container = document.getElementById('item-actions-panel');
+            if (!container) return;
+            const mode = options.mode || 'drop';
+            const title = options.title || 'CANTIDAD';
+            const max = options.max || 10;
+            const initialVal = options.defaultVal || 1;
+
+            container.innerHTML = `
+                <div class="inline-qty-panel" id="inline-qty-panel" data-mode="${mode}">
+                    <div class="inline-qty-header">
+                        <span class="inline-qty-mode-title">${title}</span>
+                        <span class="inline-qty-max-badge">DISP: ${max}</span>
+                    </div>
+                    <div class="inline-qty-stepper">
+                        <button type="button" class="inline-qty-btn-step" id="prev-btn-qty-minus">−</button>
+                        <div class="inline-qty-input-wrap">
+                            <input type="number" class="inline-qty-input" id="prev-inline-qty-input" min="1" max="${max}" value="${initialVal}">
+                        </div>
+                        <button type="button" class="inline-qty-btn-step" id="prev-btn-qty-plus">+</button>
+                        <button type="button" class="inline-qty-btn-max" id="prev-btn-qty-max">MÁX</button>
+                    </div>
+                    <div class="inline-qty-actions">
+                        <button type="button" class="inline-qty-confirm-btn" id="prev-btn-qty-confirm">
+                            <span class="inline-qty-key-badge">↵</span>
+                            <span>CONFIRMAR</span>
+                        </button>
+                        <button type="button" class="inline-qty-cancel-btn" id="prev-btn-qty-cancel">
+                            <span class="inline-qty-key-badge">ESC</span>
+                            <span>CANCELAR</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const input = document.getElementById('prev-inline-qty-input');
+            const minus = document.getElementById('prev-btn-qty-minus');
+            const plus = document.getElementById('prev-btn-qty-plus');
+            const maxBtn = document.getElementById('prev-btn-qty-max');
+            const confirmBtn = document.getElementById('prev-btn-qty-confirm');
+            const cancelBtn = document.getElementById('prev-btn-qty-cancel');
+
+            minus.onclick = (e) => { e.stopPropagation(); input.value = Math.max(1, (parseInt(input.value) || 1) - 1); };
+            plus.onclick = (e) => { e.stopPropagation(); input.value = Math.min(max, (parseInt(input.value) || 1) + 1); };
+            maxBtn.onclick = (e) => { e.stopPropagation(); input.value = max; };
+            confirmBtn.onclick = (e) => {
+                e.stopPropagation();
+                window.isPreviewInlineQtyActive = false;
+                if (options.onConfirm) options.onConfirm(parseInt(input.value) || 1);
+            };
+            cancelBtn.onclick = (e) => {
+                e.stopPropagation();
+                window.isPreviewInlineQtyActive = false;
+                if (options.onCancel) options.onCancel();
+            };
+        }
+
         $(document).on('mouseleave', '#inventoryElement .item, #secondInventoryElement .item', function(e) {
-            if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel').length) {
+            if (window.isPreviewInlineQtyActive) return;
+            if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel, #item-actions-panel').length) {
                 return;
             }
             const nextItem = e.relatedTarget ? $(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item') : null;
@@ -452,28 +531,49 @@
         });
 
         $(document).on('mouseleave', '#gunbelt-ammo-panel', function(e) {
-            if (e.relatedTarget && ($(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item').length || $(e.relatedTarget).closest('#inventoryBackground').length)) {
+            if (window.isPreviewInlineQtyActive) return;
+            if (e.relatedTarget && ($(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item').length || $(e.relatedTarget).closest('#inventoryBackground, #item-actions-panel').length)) {
                 return;
             }
             previewClearItem();
         });
 
         $(document).on('mouseleave', '#inventoryElement, #secondInventoryElement', function(e) {
-            if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel').length) {
+            if (window.isPreviewInlineQtyActive) return;
+            if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel, #item-actions-panel').length) {
                 return;
             }
             previewClearItem();
         });
 
         $(document).on('click', function(e) {
-            if (!$(e.target).closest('#inventoryElement .item, #secondInventoryElement .item').length && !$(e.target).closest('#gunbelt-ammo-panel').length) {
+            if (window.isPreviewInlineQtyActive && $(e.target).closest('#item-actions-panel').length) return;
+            if (!$(e.target).closest('#inventoryElement .item, #secondInventoryElement .item, #gunbelt-ammo-panel, #item-actions-panel').length) {
+                if (window.isPreviewInlineQtyActive) window.isPreviewInlineQtyActive = false;
                 previewClearItem();
             }
         });
 
         $(document).on('keydown', function(e) {
             const tag = (e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '');
-            if (tag === 'input' || tag === 'textarea') return;
+            if (tag === 'input' || tag === 'textarea') {
+                if (window.isPreviewInlineQtyActive) {
+                    if (e.key === 'Enter') {
+                        document.getElementById('prev-btn-qty-confirm')?.click();
+                    } else if (e.key === 'Escape') {
+                        document.getElementById('prev-btn-qty-cancel')?.click();
+                    }
+                }
+                return;
+            }
+            if (window.isPreviewInlineQtyActive) {
+                if (e.key === 'Enter') {
+                    document.getElementById('prev-btn-qty-confirm')?.click();
+                } else if (e.key === 'Escape') {
+                    document.getElementById('prev-btn-qty-cancel')?.click();
+                }
+                return;
+            }
             if (!window.currentPreviewItem) return;
             const key = (e.key || '').toUpperCase();
             if (['E', 'G', 'X', 'C'].includes(key)) {
@@ -482,7 +582,7 @@
                     e.preventDefault();
                     btn.classList.add('btn-key-pressed');
                     setTimeout(() => btn.classList.remove('btn-key-pressed'), 180);
-                    console.log('Action triggered by key:', key, btn.dataset.text);
+                    btn.click();
                 }
                 return;
             }
@@ -666,6 +766,41 @@
                 toggleCraftingMenu();
             } else if (window.location.hash === '#quickslots') {
                 toggleQuickslots();
+            } else if (window.location.hash === '#inline-drop') {
+                previewHoverItem(1);
+                previewShowInlineQty({
+                    mode: 'drop',
+                    title: 'TIRAR AL SUELO',
+                    max: 10,
+                    defaultVal: 1
+                });
+            } else if (window.location.hash === '#inline-give') {
+                previewHoverItem(1);
+                previewShowInlineQty({
+                    mode: 'give',
+                    title: 'DAR A JUGADOR',
+                    max: 10,
+                    defaultVal: 1
+                });
+            } else if (window.location.hash === '#target-preview') {
+                $("#inventoryHud").hide();
+                $("#secondInventoryHud").hide();
+                $("#player-target-overlay").show();
+                const container = $("#player-target-markers");
+                container.html(`
+                    <div class="player-target-item" data-player="2" style="left: 70%; top: 40%;">
+                        <div class="player-target-label">ID: 2</div>
+                        <div class="player-target-circle">
+                            <div class="player-target-dot"></div>
+                        </div>
+                    </div>
+                    <div class="player-target-item" data-player="1" style="left: 38%; top: 72%;">
+                        <div class="player-target-label">ID: 1</div>
+                        <div class="player-target-circle">
+                            <div class="player-target-dot"></div>
+                        </div>
+                    </div>
+                `);
             }
         });
     </script>

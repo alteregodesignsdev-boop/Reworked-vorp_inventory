@@ -51,7 +51,7 @@ Config = {
 
 	QuickslotUseKeys           = { "1", "2", "3", "4", "5" },
 
-	UseFilter                  = true,    -- If true then will use the filter opening inventory
+	UseFilter                  = false,   -- If true then will use the filter opening inventory
 
 	Filter                     = "OJDominoBlur",
 

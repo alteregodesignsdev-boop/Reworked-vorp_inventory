@@ -25,6 +25,11 @@ AddEventHandler('onResourceStop', function(resource)
     if InInventory then
         InInventory = false
     end
+
+    -- Stop any lingering screen blur postfx
+    if AnimpostfxIsRunning("OJDominoBlur") then
+        AnimpostfxStop("OJDominoBlur")
+    end
     
     -- Re-enable ALL controls immediately
     for i = 0, 255 do
@@ -55,9 +60,14 @@ end)
 
 -- Handle restart from server
 RegisterNetEvent("vorp_inventory:Client:CleanupBeforeRestart", function()
-    -- Force close any open inventory immediately
+    -- Clear inventory state
     if InInventory then
         InInventory = false
+    end
+
+    -- Stop any lingering screen blur postfx
+    if AnimpostfxIsRunning("OJDominoBlur") then
+        AnimpostfxStop("OJDominoBlur")
     end
     
     -- Force close NUI
@@ -154,6 +164,11 @@ end)
 -- Handle resource start
 AddEventHandler('onClientResourceStart', function(resource)
     if resource ~= resourceName then return end
+
+    -- Clear any active screen blur
+    if AnimpostfxIsRunning("OJDominoBlur") then
+        AnimpostfxStop("OJDominoBlur")
+    end
     
     -- Check if this is a hot reload (player already in session)
     if LocalPlayer.state.IsInSession then

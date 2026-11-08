@@ -272,6 +272,79 @@ function disableInventory(ms) {
     }
 }
 
+function start3DPlayerTargeting(data) {
+    objToGive = {};
+    objToGive = data;
+
+    // Ocultar inventarios y popups
+    $("#inventoryHud").hide();
+    $("#secondInventoryHud").hide();
+    $("#character-selection").hide();
+    $("#disabler").hide();
+
+    // Limpiar marcadores y mostrar overlay de apuntado interactivo en el mundo 3D
+    $("#player-target-markers").empty();
+    $("#player-target-overlay").fadeIn(100);
+}
+
+function update3DPlayerTargets(targets) {
+    if (!$("#player-target-overlay").is(":visible")) return;
+    const $container = $("#player-target-markers");
+    const activeIds = new Set();
+
+    if (Array.isArray(targets)) {
+        targets.forEach(t => {
+            const playerId = String(t.player);
+            activeIds.add(playerId);
+            let $el = $container.find(`.player-target-item[data-player="${playerId}"]`);
+            if (!$el.length) {
+                $el = $(`
+                    <div class="player-target-item" data-player="${playerId}">
+                        <div class="player-target-label">ID: ${t.label}</div>
+                        <div class="player-target-circle">
+                            <div class="player-target-dot"></div>
+                        </div>
+                    </div>
+                `);
+                $el.on('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    validatePlayerSelection(Number(playerId));
+                });
+                $container.append($el);
+            }
+
+            // Actualizar posición en pantalla (x, y están normalizados entre 0.0 y 1.0)
+            const leftPct = (t.x * 100).toFixed(2);
+            const topPct = (t.y * 100).toFixed(2);
+            $el.css({
+                left: leftPct + '%',
+                top: topPct + '%'
+            });
+        });
+    }
+
+    // Eliminar marcadores que ya no estén en pantalla o fuera de rango
+    $container.find('.player-target-item').each(function() {
+        const id = $(this).attr('data-player');
+        if (!activeIds.has(id)) {
+            $(this).remove();
+        }
+    });
+}
+
+function stop3DPlayerTargeting() {
+    $("#player-target-overlay").hide();
+    $("#player-target-markers").empty();
+    objToGive = {};
+    $.post(`https://${GetParentResourceName()}/StopPlayerTargeting`, JSON.stringify({}));
+    $("#inventoryHud").fadeIn(120);
+}
+
+function cancel3DPlayerTargeting() {
+    stop3DPlayerTargeting();
+}
+
 function validatePlayerSelection(player) {
     const data = objToGive;
 
@@ -280,41 +353,18 @@ function validatePlayerSelection(player) {
         data: data,
     });
 
-    $("#disabler").hide();
-    $("#character-selection").hide();
-
-    // reset obj to give, for security
-    objToGive = {};
+    stop3DPlayerTargeting();
 }
 
 /**
  * @param {object} data
  }**/
 function selectPlayerToGive(data) {
-    $("#disabler").show();
-    objToGive = {};
-    objToGive = data; // save obj to give during process
-    const characters = data.players;
-
-    $("#character-select-title").html(LANGUAGE.toplayerpromptitle);
-    characters.sort((a, b) =>
-        a.label.toString().localeCompare(b.label.toString())
-    );
-
-    $("#character-list").html("");
-    characters.forEach((character) => {
-        $("#character-list").append(
-            `<li class="list-item" id="character-${character.player}" data-player="${character.player}" onclick="validatePlayerSelection(${character.player})">${character.label}</li>`
-        );
-    });
-    $("#character-selection").show();
+    start3DPlayerTargeting(data);
 }
 
 function closeCharacterSelection() {
-    // reset obj to give, for security
-    objToGive = {};
-    $("#disabler").hide();
-    $("#character-selection").hide();
+    stop3DPlayerTargeting();
 }
 
 function dropGetHowMany(item, type, hash, id, metadata, count, degradation) {
@@ -329,46 +379,69 @@ function dropGetHowMany(item, type, hash, id, metadata, count, degradation) {
                 degradation: degradation,
             });
         } else {
-            dialog.prompt({
-                title: LANGUAGE.prompttitle,
-                button: LANGUAGE.promptaccept,
-                required: true,
-                item: item,
-                type: type,
-                input: {
-                    type: "number",
-                    autofocus: "true",
-                },
-                validate: function (value, item, type) {
-                    // Si el input está vacío, usar la cantidad máxima
-                    let finalValue = value;
-                    if (!value || value.trim() === "") {
-                        finalValue = count;
+            if (typeof window.showInlineQuantityPanel === 'function') {
+                window.showInlineQuantityPanel({
+                    mode: 'drop',
+                    title: (typeof LANGUAGE !== 'undefined' && LANGUAGE.drop) ? LANGUAGE.drop : 'TIRAR',
+                    max: count,
+                    defaultVal: 1,
+                    onConfirm: function (finalValue) {
+                        if (!finalValue || finalValue <= 0) return;
+                        if (type !== "item_money" && type !== "item_gold") {
+                            if (!isInt(finalValue)) return;
+                        }
+                        secureCallbackToNui("vorp_inventory", "DropItem", {
+                            item: item,
+                            id: id,
+                            type: type,
+                            number: finalValue,
+                            metadata: metadata,
+                            degradation: degradation,
+                        });
                     }
-                    
-                    if (!finalValue || finalValue <= 0) {
-                        dialog.close();
-                        return;
-                    }
+                });
+            } else {
+                dialog.prompt({
+                    title: LANGUAGE.prompttitle,
+                    button: LANGUAGE.promptaccept,
+                    required: true,
+                    item: item,
+                    type: type,
+                    input: {
+                        type: "number",
+                        autofocus: "true",
+                    },
+                    validate: function (value, item, type) {
+                        // Si el input está vacío, usar la cantidad máxima
+                        let finalValue = value;
+                        if (!value || value.trim() === "") {
+                            finalValue = count;
+                        }
 
-                    if (type !== "item_money" && type !== "item_gold") {
-                        if (!isInt(finalValue)) {
+                        if (!finalValue || finalValue <= 0) {
+                            dialog.close();
                             return;
                         }
-                    }
 
-                    secureCallbackToNui("vorp_inventory", "DropItem", {
-                        item: item,
-                        id: id,
-                        type: type,
-                        number: finalValue,
-                        metadata: metadata,
-                        degradation: degradation,
-                    });
+                        if (type !== "item_money" && type !== "item_gold") {
+                            if (!isInt(finalValue)) {
+                                return;
+                            }
+                        }
 
-                    return true;
-                },
-            });
+                        secureCallbackToNui("vorp_inventory", "DropItem", {
+                            item: item,
+                            id: id,
+                            type: type,
+                            number: finalValue,
+                            metadata: metadata,
+                            degradation: degradation,
+                        });
+
+                        return true;
+                    },
+                });
+            }
         }
     } else {
         secureCallbackToNui("vorp_inventory", "DropItem", {
@@ -384,44 +457,65 @@ function giveGetHowMany(item, type, hash, id, metadata, count) {
     if (type != "item_weapon") {
 
         if (count > 1) {
-            dialog.prompt({
-                title: LANGUAGE.prompttitle,
-                button: LANGUAGE.promptaccept,
-                required: false,
-                item: item,
-                type: type,
-                input: {
-                    type: "number",
-                    autofocus: "true",
-                },
-                validate: function (value, item, type) {
-                    // Si el input está vacío, usar la cantidad máxima
-                    let finalValue = value;
-                    if (!value || value.trim() === "") {
-                        finalValue = count;
+            if (typeof window.showInlineQuantityPanel === 'function') {
+                window.showInlineQuantityPanel({
+                    mode: 'give',
+                    title: (typeof LANGUAGE !== 'undefined' && LANGUAGE.give) ? LANGUAGE.give : 'DAR',
+                    max: count,
+                    defaultVal: 1,
+                    onConfirm: function (finalValue) {
+                        if (!finalValue || finalValue <= 0) return;
+                        if (!isInt(finalValue)) return;
+                        $.post(`https://${GetParentResourceName()}/GetNearPlayers`, JSON.stringify({
+                            type: type,
+                            what: "give",
+                            item: item,
+                            id: id,
+                            count: parseInt(finalValue),
+                            metadata: metadata,
+                        }));
                     }
-                    
-                    if (!finalValue || finalValue <= 0) {
-                        dialog.close();
-                        return;
-                    }
+                });
+            } else {
+                dialog.prompt({
+                    title: LANGUAGE.prompttitle,
+                    button: LANGUAGE.promptaccept,
+                    required: false,
+                    item: item,
+                    type: type,
+                    input: {
+                        type: "number",
+                        autofocus: "true",
+                    },
+                    validate: function (value, item, type) {
+                        // Si el input está vacío, usar la cantidad máxima
+                        let finalValue = value;
+                        if (!value || value.trim() === "") {
+                            finalValue = count;
+                        }
 
-                    if (!isInt(finalValue)) {
-                        dialog.close();
-                        return;
-                    }
+                        if (!finalValue || finalValue <= 0) {
+                            dialog.close();
+                            return;
+                        }
 
-                    $.post(`https://${GetParentResourceName()}/GetNearPlayers`, JSON.stringify({
-                        type: type,
-                        what: "give",
-                        item: item,
-                        id: id,
-                        count: parseInt(finalValue),
-                        metadata: metadata,
-                    }));
-                    return true;
-                },
-            });
+                        if (!isInt(finalValue)) {
+                            dialog.close();
+                            return;
+                        }
+
+                        $.post(`https://${GetParentResourceName()}/GetNearPlayers`, JSON.stringify({
+                            type: type,
+                            what: "give",
+                            item: item,
+                            id: id,
+                            count: parseInt(finalValue),
+                            metadata: metadata,
+                        }));
+                        return true;
+                    },
+                });
+            }
         } else {
 
             if (!count || count <= 0) return;
@@ -452,102 +546,168 @@ function giveGetHowMany(item, type, hash, id, metadata, count) {
 }
 
 function giveGetHowManyMoney() {
-    dialog.prompt({
-        title: LANGUAGE.prompttitle,
-        button: LANGUAGE.promptaccept,
-        required: true,
-        item: "money",
-        type: "item_money",
-        input: {
-            type: "number",
-            autofocus: "true",
-        },
-        validate: function (value, item, type) {
-            if (!value || value <= 0) {
-                dialog.close();
-                return;
+    if (typeof window.showInlineQuantityPanel === 'function') {
+        window.showInlineQuantityPanel({
+            mode: 'give',
+            title: (typeof LANGUAGE !== 'undefined' && LANGUAGE.givemoney) ? LANGUAGE.givemoney : 'DAR DINERO',
+            max: 999999,
+            defaultVal: 1,
+            isFloat: true,
+            onConfirm: function (value) {
+                if (!value || value <= 0) return;
+                $.post(
+                    `https://${GetParentResourceName()}/GetNearPlayers`,
+                    JSON.stringify({
+                        type: "item_money",
+                        what: "give",
+                        item: "money",
+                        count: value,
+                    })
+                );
             }
-            $.post(
-                `https://${GetParentResourceName()}/GetNearPlayers`,
-                JSON.stringify({
-                    type: type,
-                    what: "give",
-                    item: item,
-                    count: value,
-                })
-            );
-            return true;
-        },
-    });
+        });
+    } else {
+        dialog.prompt({
+            title: LANGUAGE.prompttitle,
+            button: LANGUAGE.promptaccept,
+            required: true,
+            item: "money",
+            type: "item_money",
+            input: {
+                type: "number",
+                autofocus: "true",
+            },
+            validate: function (value, item, type) {
+                if (!value || value <= 0) {
+                    dialog.close();
+                    return;
+                }
+                $.post(
+                    `https://${GetParentResourceName()}/GetNearPlayers`,
+                    JSON.stringify({
+                        type: type,
+                        what: "give",
+                        item: item,
+                        count: value,
+                    })
+                );
+                return true;
+            },
+        });
+    }
 }
 
 function giveammotoplayer(ammotype, maxCount) {
-    dialog.prompt({
-        title: LANGUAGE.prompttitle,
-        button: LANGUAGE.promptaccept,
-        required: true,
-        item: ammotype,
-        type: "item_ammo",
-        input: {
-            type: "number",
-            autofocus: "true",
-        },
-        validate: function (value, item, type) {
-            // Si el input está vacío, usar la cantidad máxima
-            let finalValue = value;
-            if (!value || value.trim() === "") {
-                finalValue = maxCount;
+    if (typeof window.showInlineQuantityPanel === 'function') {
+        window.showInlineQuantityPanel({
+            mode: 'give',
+            title: (typeof LANGUAGE !== 'undefined' && LANGUAGE.give) ? (LANGUAGE.give + " MUNICIÓN") : 'DAR MUNICIÓN',
+            max: maxCount,
+            defaultVal: 1,
+            onConfirm: function (finalValue) {
+                if (!finalValue || finalValue <= 0) return;
+                if (!isInt(finalValue)) return;
+                $.post(
+                    `https://${GetParentResourceName()}/GetNearPlayers`,
+                    JSON.stringify({
+                        type: "item_ammo",
+                        what: "give",
+                        item: ammotype,
+                        count: parseInt(finalValue),
+                    })
+                );
             }
-            
-            if (!finalValue || finalValue <= 0) {
-                dialog.close();
-                return;
-            }
-            if (!isInt(finalValue)) {
-                return;
-            }
-            $.post(
-                `https://${GetParentResourceName()}/GetNearPlayers`,
-                JSON.stringify({
-                    type: type,
-                    what: "give",
-                    item: item,
-                    count: parseInt(finalValue),
-                })
-            );
-            return true;
-        },
-    });
+        });
+    } else {
+        dialog.prompt({
+            title: LANGUAGE.prompttitle,
+            button: LANGUAGE.promptaccept,
+            required: true,
+            item: ammotype,
+            type: "item_ammo",
+            input: {
+                type: "number",
+                autofocus: "true",
+            },
+            validate: function (value, item, type) {
+                // Si el input está vacío, usar la cantidad máxima
+                let finalValue = value;
+                if (!value || value.trim() === "") {
+                    finalValue = maxCount;
+                }
+
+                if (!finalValue || finalValue <= 0) {
+                    dialog.close();
+                    return;
+                }
+                if (!isInt(finalValue)) {
+                    return;
+                }
+                $.post(
+                    `https://${GetParentResourceName()}/GetNearPlayers`,
+                    JSON.stringify({
+                        type: type,
+                        what: "give",
+                        item: item,
+                        count: parseInt(finalValue),
+                    })
+                );
+                return true;
+            },
+        });
+    }
 }
 
 function giveGetHowManyGold() {
-    dialog.prompt({
-        title: LANGUAGE.prompttitle,
-        button: LANGUAGE.promptaccept,
-        required: true,
-        item: "gold",
-        type: "item_gold",
-        input: {
-            type: "number",
-            autofocus: "true",
-        },
-        validate: function (value, item, type) {
-            if (!value || value <= 0) {
-                dialog.close();
-                return;
+    if (typeof window.showInlineQuantityPanel === 'function') {
+        window.showInlineQuantityPanel({
+            mode: 'give',
+            title: (typeof LANGUAGE !== 'undefined' && LANGUAGE.givegold) ? LANGUAGE.givegold : 'DAR ORO',
+            max: 99999,
+            defaultVal: 1,
+            isFloat: true,
+            onConfirm: function (value) {
+                if (!value || value <= 0) return;
+                $.post(
+                    `https://${GetParentResourceName()}/GetNearPlayers`,
+                    JSON.stringify({
+                        type: "item_gold",
+                        what: "give",
+                        item: "gold",
+                        count: value,
+                    })
+                );
             }
-            $.post(
-                `https://${GetParentResourceName()}/GetNearPlayers`,
-                JSON.stringify({
-                    type: type,
-                    what: "give",
-                    item: item,
-                    count: value,
-                })
-            );
-            return true;
-        },
-    });
+        });
+    } else {
+        dialog.prompt({
+            title: LANGUAGE.prompttitle,
+            button: LANGUAGE.promptaccept,
+            required: true,
+            item: "gold",
+            type: "item_gold",
+            input: {
+                type: "number",
+                autofocus: "true",
+            },
+            validate: function (value, item, type) {
+                if (!value || value <= 0) {
+                    dialog.close();
+                    return;
+                }
+                $.post(
+                    `https://${GetParentResourceName()}/GetNearPlayers`,
+                    JSON.stringify({
+                        type: type,
+                        what: "give",
+                        item: item,
+                        count: value,
+                    })
+                );
+                return true;
+            },
+        });
+    }
 }
 
 function closeInventory() {

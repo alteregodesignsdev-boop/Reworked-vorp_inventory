@@ -5,6 +5,7 @@ RegisterNUICallback('UseItem', NUIService.NUIUseItem)
 RegisterNUICallback('sound', NUIService.NUISound)
 RegisterNUICallback('GiveItem', NUIService.NUIGiveItem)
 RegisterNUICallback('GetNearPlayers', NUIService.NUIGetNearPlayers)
+RegisterNUICallback('StopPlayerTargeting', NUIService.StopPlayerTargeting)
 RegisterNUICallback('PackMoney', NUIService.NUIPackMoney) -- Nuevo callback para empaquetar dinero
 RegisterNUICallback('UnequipWeapon', NUIService.NUIUnequipWeapon)
 RegisterNUICallback('TakeFromCustom', NUIService.NUITakeFromCustom)

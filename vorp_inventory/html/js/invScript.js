@@ -581,6 +581,178 @@ window.renderItemActionsInPanel = function($el) {
     }
 };
 
+// ========================================================
+// SELECTOR INLINE DE CANTIDAD (DAR / TIRAR / SOBRE)
+// ========================================================
+window.isInlineQtyActive = false;
+window.activeInlineQtyOptions = null;
+
+window.showInlineQuantityPanel = function(options) {
+    const $container = $("#item-actions-panel");
+    if (!$container.length) return;
+
+    window.isInlineQtyActive = true;
+    window.activeInlineQtyOptions = options || {};
+
+    const mode = options.mode || 'drop';
+    const isDrop = mode === 'drop';
+    const isGive = mode === 'give';
+    const isPack = mode === 'pack';
+    
+    let defaultTitle = isDrop ? 'TIRAR AL SUELO' : (isGive ? 'DAR A JUGADOR' : (isPack ? 'METER EN SOBRE' : 'CANTIDAD'));
+    const titleText = options.title || defaultTitle;
+    const maxCount = options.max !== undefined && options.max !== null ? options.max : 1;
+    const isFloat = !!options.isFloat;
+    const initialVal = options.defaultVal !== undefined ? options.defaultVal : 1;
+
+    const html = `
+        <div class="inline-qty-panel" id="inline-qty-panel" data-mode="${mode}">
+            <div class="inline-qty-header">
+                <span class="inline-qty-mode-title">${titleText}</span>
+                <span class="inline-qty-max-badge">DISP: ${isFloat ? Number(maxCount).toFixed(2) : maxCount}</span>
+            </div>
+            <div class="inline-qty-stepper">
+                <button type="button" class="inline-qty-btn-step" id="btn-qty-minus" title="Restar 1">−</button>
+                <div class="inline-qty-input-wrap">
+                    <input type="number" class="inline-qty-input" id="inline-qty-input" 
+                        min="${isFloat ? '0.01' : '1'}" 
+                        max="${maxCount}" 
+                        step="${isFloat ? '0.01' : '1'}" 
+                        value="${initialVal}" 
+                        autocomplete="off" />
+                </div>
+                <button type="button" class="inline-qty-btn-step" id="btn-qty-plus" title="Sumar 1">+</button>
+                <button type="button" class="inline-qty-btn-max" id="btn-qty-max" title="Cantidad máxima">MÁX</button>
+            </div>
+            <div class="inline-qty-actions">
+                <button type="button" class="inline-qty-confirm-btn" id="btn-qty-confirm">
+                    <span class="inline-qty-key-badge">↵</span>
+                    <span>CONFIRMAR</span>
+                </button>
+                <button type="button" class="inline-qty-cancel-btn" id="btn-qty-cancel">
+                    <span class="inline-qty-key-badge">ESC</span>
+                    <span>CANCELAR</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    $container.html(html);
+
+    const $input = $("#inline-qty-input");
+    setTimeout(() => {
+        $input.focus().select();
+    }, 40);
+
+    function getParsedValue() {
+        let raw = $input.val();
+        if (typeof raw === 'string') raw = raw.replace(',', '.').trim();
+        let val = isFloat ? parseFloat(raw) : parseInt(raw, 10);
+        if (isNaN(val) || val <= 0) val = 1;
+        if (val > maxCount) val = maxCount;
+        return val;
+    }
+
+    function setClampedValue(val) {
+        if (isNaN(val) || val <= 0) val = isFloat ? 0.01 : 1;
+        if (val > maxCount) val = maxCount;
+        $input.val(isFloat ? Number(val.toFixed(2)) : Math.floor(val));
+    }
+
+    $("#btn-qty-minus").on('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        let cur = getParsedValue();
+        let step = e.shiftKey ? 10 : 1;
+        setClampedValue(cur - step);
+    });
+
+    $("#btn-qty-plus").on('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        let cur = getParsedValue();
+        let step = e.shiftKey ? 10 : 1;
+        setClampedValue(cur + step);
+    });
+
+    $("#btn-qty-max").on('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        setClampedValue(maxCount);
+    });
+
+    $input.on('change', function() {
+        let val = getParsedValue();
+        setClampedValue(val);
+    });
+
+    $("#btn-qty-confirm").on('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.confirmInlineQty();
+    });
+
+    $("#btn-qty-cancel").on('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.cancelInlineQty();
+    });
+};
+
+window.stepInlineQty = function(direction) {
+    const $input = $("#inline-qty-input");
+    if (!$input.length || !window.activeInlineQtyOptions) return;
+    const maxCount = window.activeInlineQtyOptions.max || 1;
+    const isFloat = !!window.activeInlineQtyOptions.isFloat;
+    let raw = $input.val();
+    let val = isFloat ? parseFloat(raw) : parseInt(raw, 10);
+    if (isNaN(val)) val = 1;
+    val += direction;
+    if (val < 1) val = 1;
+    if (val > maxCount) val = maxCount;
+    $input.val(isFloat ? Number(val.toFixed(2)) : Math.floor(val));
+};
+
+window.confirmInlineQty = function() {
+    if (!window.isInlineQtyActive || !window.activeInlineQtyOptions) return;
+    const $input = $("#inline-qty-input");
+    const options = window.activeInlineQtyOptions;
+    const maxCount = options.max || 1;
+    const isFloat = !!options.isFloat;
+    
+    let raw = $input.val();
+    if (typeof raw === 'string') raw = raw.replace(',', '.').trim();
+    let val = isFloat ? parseFloat(raw) : parseInt(raw, 10);
+    if (isNaN(val) || val <= 0) val = isFloat ? 0.01 : 1;
+    if (val > maxCount) val = maxCount;
+
+    const onConfirm = options.onConfirm;
+    window.closeInlineQuantityPanel();
+
+    if (typeof onConfirm === 'function') {
+        onConfirm(val);
+    }
+};
+
+window.cancelInlineQty = function() {
+    if (!window.isInlineQtyActive) return;
+    const options = window.activeInlineQtyOptions;
+    if (options && typeof options.onCancel === 'function') {
+        options.onCancel();
+    }
+    window.closeInlineQuantityPanel();
+};
+
+window.closeInlineQuantityPanel = function() {
+    window.isInlineQtyActive = false;
+    window.activeInlineQtyOptions = null;
+    if (window.currentPanelItem && window.currentPanelItem.length) {
+        window.renderItemActionsInPanel(window.currentPanelItem);
+    } else {
+        $("#item-actions-panel").empty();
+    }
+};
+
 window.clearPanelTimeout = null;
 
 window.getItemDurability = function(item) {
@@ -802,6 +974,8 @@ window.clearItemPanel = function() {
         clearInterval(window.panelDurabilityInterval);
         window.panelDurabilityInterval = null;
     }
+    window.isInlineQtyActive = false;
+    window.activeInlineQtyOptions = null;
     window.currentPanelItem = null;
     $("#inventoryElement .item, #secondInventoryElement .item").removeClass('panel-item-active');
     $("#item-actions-panel").empty();
@@ -821,6 +995,10 @@ window.showItemInPanel = function($el) {
     if (window.clearPanelTimeout) {
         clearTimeout(window.clearPanelTimeout);
         window.clearPanelTimeout = null;
+    }
+    if (window.isInlineQtyActive) {
+        window.isInlineQtyActive = false;
+        window.activeInlineQtyOptions = null;
     }
     if (!$el || !$el.length) return;
     const item = $el.data('item');
@@ -885,14 +1063,18 @@ window.showItemInPanel = function($el) {
 
 // Limpiar selección cuando el cursor sale de los ítems
 $(document).on('mouseleave', '#inventoryElement .item, #secondInventoryElement .item', function(e) {
-    if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel').length) {
-        return; // Moviéndose hacia el panel lateral de munición
+    if (window.isInlineQtyActive) {
+        return; // Mantener panel visible mientras se interactúa con el selector de cantidad
+    }
+    if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel, #item-actions-panel').length) {
+        return; // Moviéndose hacia el panel lateral de munición o panel de acciones
     }
     const nextItem = e.relatedTarget ? $(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item') : null;
     if (!nextItem || !nextItem.length || !nextItem.data('item')) {
         if (window.clearPanelTimeout) clearTimeout(window.clearPanelTimeout);
         window.clearPanelTimeout = setTimeout(function() {
-            if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length) {
+            if (window.isInlineQtyActive) return;
+            if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length && !$("#item-actions-panel:hover").length) {
                 window.clearItemPanel();
             }
         }, 50);
@@ -900,32 +1082,56 @@ $(document).on('mouseleave', '#inventoryElement .item, #secondInventoryElement .
 });
 
 $(document).on('mouseleave', '#gunbelt-ammo-panel', function(e) {
-    if (e.relatedTarget && ($(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item').length || $(e.relatedTarget).closest('#inventoryBackground').length)) {
+    if (e.relatedTarget && ($(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item').length || $(e.relatedTarget).closest('#inventoryBackground, #item-actions-panel').length)) {
         return; // Moviéndose de regreso al inventario
     }
     if (window.clearPanelTimeout) clearTimeout(window.clearPanelTimeout);
     window.clearPanelTimeout = setTimeout(function() {
-        if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length) {
+        if (window.isInlineQtyActive) return;
+        if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length && !$("#item-actions-panel:hover").length) {
             window.clearItemPanel();
         }
     }, 50);
 });
 
 $(document).on('mouseleave', '#inventoryElement, #secondInventoryElement', function(e) {
-    if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel, #inventoryElement .item, #secondInventoryElement .item').length) {
+    if (window.isInlineQtyActive) {
+        return;
+    }
+    if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel, #item-actions-panel, #inventoryElement .item, #secondInventoryElement .item').length) {
         return;
     }
     if (window.clearPanelTimeout) clearTimeout(window.clearPanelTimeout);
     window.clearPanelTimeout = setTimeout(function() {
-        if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length) {
+        if (window.isInlineQtyActive) return;
+        if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length && !$("#item-actions-panel:hover").length) {
             window.clearItemPanel();
         }
     }, 50);
 });
 
 $(document).on('click', function(e) {
-    if (!$(e.target).closest('#inventoryElement .item, #secondInventoryElement .item').length && !$(e.target).closest('#gunbelt-ammo-panel').length) {
+    if (window.isInlineQtyActive && $(e.target).closest('#item-actions-panel').length) {
+        return;
+    }
+    if (!$(e.target).closest('#inventoryElement .item, #secondInventoryElement .item, #gunbelt-ammo-panel, #item-actions-panel').length) {
+        if (window.isInlineQtyActive) {
+            window.cancelInlineQty();
+        }
         window.clearItemPanel();
+    }
+});
+
+// Clic directo en botones de acción del panel principal (E, G, X, C)
+$(document).on('click', '.panel-action-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const $btn = $(this);
+    $btn.addClass('btn-key-pressed');
+    setTimeout(() => $btn.removeClass('btn-key-pressed'), 180);
+    const actionFn = $btn.data('action');
+    if (typeof actionFn === 'function' && window.currentPanelItem && window.currentPanelItem.length) {
+        actionFn.call(window.currentPanelItem[0]);
     }
 });
 
@@ -944,10 +1150,64 @@ $(document).on('click', '.lateral-ammo-btn', function(e) {
 
 // Atajos de teclado para ejecutar acciones con el cursor sobre un ítem
 $(document).on('keydown', function(e) {
-    // Si el usuario está escribiendo en el buscador o cualquier input, ignorar atajos
+    // Si el usuario está escribiendo en el buscador o cualquier input, ignorar atajos (salvo atajos del input de cantidad)
     const tag = (e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '');
     if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) {
+        if ($(e.target).hasClass('inline-qty-input')) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                window.confirmInlineQty();
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                window.cancelInlineQty();
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                e.stopPropagation();
+                window.stepInlineQty(1);
+                return;
+            }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                e.stopPropagation();
+                window.stepInlineQty(-1);
+                return;
+            }
+        }
         return;
+    }
+
+    if (window.isInlineQtyActive) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            window.confirmInlineQty();
+            return;
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            window.cancelInlineQty();
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            e.stopPropagation();
+            window.stepInlineQty(1);
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            e.stopPropagation();
+            window.stepInlineQty(-1);
+            return;
+        }
+        return; // Bloquear E, G, X, C mientras el selector esté activo
     }
 
     if (!window.currentPanelItem || !window.currentPanelItem.length) return;
