@@ -73,9 +73,15 @@ InventoryApiService.addComponent = function(weaponId, component)
 
         UserWeapons[weaponId]:setComponent(component)
         if UserWeapons[weaponId]:getUsed() then
-            RemoveWeaponFromPed(PlayerPedId(), joaat(UserWeapons[weaponId]:getName()), true, 0)
-            UserWeapons[weaponId]:equipwep()
-            UserWeapons[weaponId]:loadComponents()
+            -- Protección: Usar pcall para evitar crashes
+            local success, err = pcall(function()
+                RemoveWeaponFromPed(PlayerPedId(), joaat(UserWeapons[weaponId]:getName()), true, 0)
+                UserWeapons[weaponId]:equipwep()
+                UserWeapons[weaponId]:loadComponents()
+            end)
+            if not success then
+                print("^1[InventoryApiService]^7 Error in setComponent: " .. tostring(err))
+            end
         end
     end
 end
@@ -91,9 +97,15 @@ InventoryApiService.subComponent = function(weaponId, component)
 
         UserWeapons[weaponId]:quitComponent(component)
         if UserWeapons[weaponId]:getUsed() then
-            RemoveWeaponFromPed(PlayerPedId(), joaat(UserWeapons[weaponId]:getName()), true, 0)
-            UserWeapons[weaponId]:equipwep()
-            UserWeapons[weaponId]:loadComponents()
+            -- Protección: Usar pcall para evitar crashes
+            local success, err = pcall(function()
+                RemoveWeaponFromPed(PlayerPedId(), joaat(UserWeapons[weaponId]:getName()), true, 0)
+                UserWeapons[weaponId]:equipwep()
+                UserWeapons[weaponId]:loadComponents()
+            end)
+            if not success then
+                print("^1[InventoryApiService]^7 Error in subComponent: " .. tostring(err))
+            end
         end
     end
 end

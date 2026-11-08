@@ -42,6 +42,7 @@ TranslationInv.Langs = {
         inventorygolddescription  = "Your Gold",
         givemoney                 = "Give money",
         dropmoney                 = "Drop money",
+        packenvelope              = "Pack money",
         givegold                  = "Give Gold",
         dropgold                  = "Drop Gold",
         of                        = " of ",
@@ -97,12 +98,14 @@ TranslationInv.Langs = {
         BothonCool                = "You can't open the inventory due to cooldown on both weapons and items.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Durability",
         labels                    = {
             weight = "Weight ",
             serial = "Serial no ",
             ammo = "Ammo ",
             limit = "Limit ",
             decay = "Decay ",
+            durability = "Durability",
         },
 
 
@@ -225,6 +228,7 @@ TranslationInv.Langs = {
         BothonCool                = "Você não pode abrir o inventário devido ao cooldown em armas e itens.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Durabilidade",
 
         labels                    = {
             weight = "Peso ",
@@ -232,6 +236,7 @@ TranslationInv.Langs = {
             ammo = "Munição ",
             limit = "Limite ",
             decay = "Decadência ",
+            durability = "Durabilidade",
         },
 
 
@@ -360,6 +365,7 @@ TranslationInv.Langs = {
         BothonCool                = "Você não pode abrir o inventário devido ao cooldown em armas e itens.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Durabilidade",
         
         labels                    = {
             weight = "Peso ",
@@ -367,6 +373,7 @@ TranslationInv.Langs = {
             ammo = "Munição ",
             limit = "Limite ",
             decay = "Decadência ",
+            durability = "Durabilidade",
         },
 
 
@@ -491,12 +498,15 @@ TranslationInv.Langs = {
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
         
+        durability                = "Durabilité",
+        
         labels                    = {
             weight = "Poids ",
             serial = "Numéro de série ",
             ammo = "Munition ",
             limit = "Limite ",
             decay = "Déclin ",
+            durability = "Durabilité",
         },
 
 
@@ -618,6 +628,7 @@ TranslationInv.Langs = {
         BothonCool                = "Sie können das Inventar nicht öffnen, da die Abkühlzeit für Waffen und Gegenstände läuft.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Haltbarkeit",
         
         labels                    = {
             weight = "Gewicht ",
@@ -625,6 +636,7 @@ TranslationInv.Langs = {
             ammo = "Munition ",
             limit = "Limit ",
             decay = "Verfall ",
+            durability = "Haltbarkeit",
         },
 
 
@@ -698,6 +710,7 @@ TranslationInv.Langs = {
         inventorygolddescription  = "Tu Oro",
         givemoney                 = "Dar Dinero",
         dropmoney                 = "Soltar Dinero",
+        packenvelope              = "Empaquetar Dinero",
         givegold                  = "Dar Oro",
         dropgold                  = "Soltar Oro",
         of                        = " de ",
@@ -749,6 +762,7 @@ TranslationInv.Langs = {
         BothonCool                = "No puedes abrir el inventario debido al enfriamiento en armas y artículos.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Durabilidad",
         
         labels                    = {
             weight = "Peso ",
@@ -756,6 +770,7 @@ TranslationInv.Langs = {
             ammo = "Munición ",
             limit = "Límite ",
             decay = "Decadencia ",
+            durability = "Durabilidad",
         },
 
 
@@ -827,6 +842,7 @@ TranslationInv.Langs = {
         inventorygolddescription  = "Il tuo oro",
         givemoney                 = "Dai soldi",
         dropmoney                 = "Butta soldi",
+        packenvelope              = "impacchettare i soldi",
         givegold                  = "Dai oro",
         dropgold                  = "Lascia cadere l'oro",
         of                        = " di ",
@@ -878,6 +894,7 @@ TranslationInv.Langs = {
         BothonCool                = "Non puoi aprire l'inventario a causa del recupero su armi e oggetti.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Durabilità",
         
         labels                    = {
             weight = "Peso ",
@@ -885,6 +902,7 @@ TranslationInv.Langs = {
             ammo = "Munizioni ",
             limit = "Limite ",
             decay = "Decadimento ",
+            durability = "Durabilità",
         },
 
         --Web hook Language
@@ -957,6 +975,7 @@ TranslationInv.Langs = {
         inventorygolddescription  = "Jouw goud",
         givemoney                 = "Geef geld",
         dropmoney                 = "Laat geld vallen",
+        packenvelope              = "geld inpakken",
         givegold                  = "Geef goud",
         dropgold                  = "Laat goud vallen",
         of                        = " of ",
@@ -1011,6 +1030,7 @@ TranslationInv.Langs = {
         BothonCool                = "Je kunt de inventaris niet openen vanwege cooldown op zowel wapens als items.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Duurzaamheid",
         
         labels                    = {
             weight = "Gewicht ",
@@ -1018,6 +1038,7 @@ TranslationInv.Langs = {
             ammo = "Munitie ",
             limit = "Limiet ",
             decay = "Verval ",
+            durability = "Duurzaamheid",
         },
 
 
@@ -1089,6 +1110,7 @@ TranslationInv.Langs = {
         inventorygolddescription  = "Ditt gull",
         givemoney                 = "Gi penger",
         dropmoney                 = "Slipp penger",
+        packenvelope              = "pakke penger",
         givegold                  = "Gi gull",
         dropgold                  = "Slipp gull",
         of                        = " of ",
@@ -1140,6 +1162,7 @@ TranslationInv.Langs = {
         BothonCool                = "Du kan ikkje opne lageret på grunn av cooldown på både våpen og gjenstandar.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Holdbarhet",
         
         labels                    = {
             weight = "Vekt ",
@@ -1147,6 +1170,7 @@ TranslationInv.Langs = {
             ammo = "Ammunisjon ",
             limit = "Grense ",
             decay = "Forfall ",
+            durability = "Holdbarhet",
         },
 
         --Web hook Language
@@ -1214,6 +1238,7 @@ TranslationInv.Langs = {
         inventorygolddescription  = "Your Gold",
         givemoney                 = "Para ver",
         dropmoney                 = "Parayı bırakmak",
+        packenvelope              = "para toplamak",
         givegold                  = "altınVermek",
         dropgold                  = "Altını düşürmek",
         of                        = " ile ilgili ",
@@ -1267,6 +1292,7 @@ TranslationInv.Langs = {
         BothonCool                = "Silahlar ve öğelerde soğuma süresi nedeniyle envanteri açamazsınız.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Dayanıklılık",
         
         labels                    = {
             weight = "Ağırlık ",
@@ -1274,6 +1300,7 @@ TranslationInv.Langs = {
             ammo = "Cephane ",
             limit = "Limit ",
             decay = "Çürüme ",
+            durability = "Dayanıklılık",
         },
         --Web hook Language
         WebHookLang               = {
@@ -1342,6 +1369,7 @@ TranslationInv.Langs = {
         inventorygolddescription  = "Aurul tau",
         givemoney                 = "Da bani",
         dropmoney                 = "Lasa bani",
+        packenvelope              = "paketi love",
         givegold                  = "Da aur",
         dropgold                  = "Lasa aur",
         of                        = " din ",
@@ -1397,6 +1425,7 @@ TranslationInv.Langs = {
         BothonCool                = "Nu poți deschide inventarul din cauza cooldown-ului atât pe arme cât și pe obiecte.",
         SomeoneUseing             = "someone is using this stash, wait for your turn",
         MaxItemTransfer           = "You cannot transfer more than %s items!",
+        durability                = "Durabilitate",
         
         labels                    = {
             weight = "Greutate ",
@@ -1404,6 +1433,7 @@ TranslationInv.Langs = {
             ammo = "Munitie ",
             limit = "Limita ",
             decay = "Decadere ",
+            durability = "Durabilitate",
         },
 
         --Web hook Language

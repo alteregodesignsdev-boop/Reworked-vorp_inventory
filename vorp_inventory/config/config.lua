@@ -1,4 +1,4 @@
-Lang = "English"
+Lang = "Espanol"
 
 Config = {
 	-- ======================= DEVELOPMENT ============================== --
@@ -29,6 +29,16 @@ Config = {
 
 	AddAmmoItem                = true,    -- Should there be an item in inventory to represent the gun belt
 
+	-- ======================= MONEY ENVELOPE SYSTEM ===================== --
+	RequireEmptyEnvelope       = true,   -- If true, players need an "empty_envelope" item to pack money
+	                                      -- If false, envelopes are created automatically when packing money
+	EmptyEnvelopeItem          = "empty_envelope", -- Item name for empty envelopes (only used if RequireEmptyEnvelope = true)
+	MaxEnvelopeAmount          = 10000,   -- Maximum amount of money that can be packed in a single envelope (in dollars)
+	                                      -- Recommended: 1000-10000 depending on your server economy
+	                                      -- This prevents exploits and money laundering
+
+	MaxInventorySlots          = 16,      -- Maximum number of visible slots in the inventory (minimum is 14)
+
 	InventorySearchable        = true,    -- Should the search bar appear in inventories
 
 	InventorySearchAutoFocus   = true,    -- Search autoofocuses when you type
@@ -38,6 +48,8 @@ Config = {
 	OpenKey                    = 0xC1989F95, -- I
 
 	QuickslotHudKey            = 0x8AAA0AD4, -- ALT
+
+	QuickslotUseKeys           = { "1", "2", "3", "4", "5" },
 
 	UseFilter                  = true,    -- If true then will use the filter opening inventory
 
@@ -62,7 +74,9 @@ Config = {
 
 	DuelWield                  = true, 	  -- If true duel wielding will be allowed.
 
-	SpamDelay				   = 2000,    -- ms | The minimum time that must elapse between using one item and being able to use another item in the inventory.
+	RequireOffhandHolster      = true,    -- If true, players must have an off-hand holster equipped (holsters_left / holsters_crossdraw) to dual wield. Also auto-unequips secondary weapon if holster is removed.
+
+	SpamDelay				   = 500,    -- ms | The minimum time that must elapse between using one item and being able to use another item in the inventory.
 
 	-- ==================== SOUND CONFIGURATION ==================== --
 	SFX = {								  -- Inventory Sound Effects

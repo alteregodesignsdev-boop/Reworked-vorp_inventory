@@ -68,6 +68,102 @@ AmmoData             = {}
 UsersInventories     = UsersInventories or { default = {} }
 UsersInventories.default = UsersInventories.default or {}
 
+local USABLE_ITEM_RESOURCES_KVP = "vorp_inventory:usableItemResources"
+local UsableItemResources = {}
+do
+	local stored = GetResourceKvpString(USABLE_ITEM_RESOURCES_KVP)
+	if type(stored) == "string" and stored ~= "" then
+		local ok, decoded = pcall(json.decode, stored)
+		if ok and type(decoded) == "table" then
+			for _, res in ipairs(decoded) do
+				if type(res) == "string" and res ~= "" then
+					UsableItemResources[res] = true
+				end
+			end
+		end
+	end
+end
+
+local function persistUsableItemResources()
+	local list = {}
+	for res, enabled in pairs(UsableItemResources) do
+		if enabled and type(res) == "string" and res ~= "" then
+			list[#list + 1] = res
+		end
+	end
+	table.sort(list)
+	SetResourceKvp(USABLE_ITEM_RESOURCES_KVP, json.encode(list))
+end
+
+local function detectUsableItemResources()
+	local current = GetCurrentResourceName()
+	local ok, total = pcall(GetNumResources)
+	if not ok or type(total) ~= "number" then
+		return {}
+	end
+
+	local patterns = {
+		"vorpCore:registerUsableItem",
+		":registerUsableItem(",
+		".registerUsableItem(",
+		"exports.vorp_inventory:registerUsableItem",
+		"exports[\"vorp_inventory\"]:registerUsableItem",
+	}
+
+	local function contentMatches(content)
+		if type(content) ~= "string" or content == "" then
+			return false
+		end
+		for _, p in ipairs(patterns) do
+			if content:find(p, 1, true) then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function resourceLooksRelevant(res)
+		local keys = { "server_script", "shared_script", "client_script" }
+		for _, metaKey in ipairs(keys) do
+			local metaCount = GetNumResourceMetadata(res, metaKey) or 0
+			for i = 0, metaCount - 1 do
+				local scriptPath = GetResourceMetadata(res, metaKey, i)
+				if type(scriptPath) == "string" and scriptPath ~= "" and not scriptPath:match("^@") then
+					local content = LoadResourceFile(res, scriptPath)
+					if contentMatches(content) then
+						return true
+					end
+				end
+			end
+		end
+		return false
+	end
+
+	local found = {}
+	for i = 0, total - 1 do
+		local res = GetResourceByFindIndex(i)
+		if type(res) == "string" and res ~= "" and res ~= current then
+			if GetResourceState(res) == "started" then
+				local ok2, relevant = pcall(resourceLooksRelevant, res)
+				if ok2 and relevant then
+					found[#found + 1] = res
+				end
+			end
+		end
+	end
+	table.sort(found)
+	return found
+end
+
+local resourceStartedAt = os.time()
+local recoveryDone = false
+AddEventHandler("onResourceStart", function(res)
+	if res == GetCurrentResourceName() then
+		resourceStartedAt = os.time()
+		recoveryDone = false
+	end
+end)
+
 --- sync or async helper
 local function respond(cb, result, message)
 	if message then print(message) end
@@ -214,6 +310,11 @@ function InventoryAPI.registerUsableItem(name, cb, resource)
 		print("^3Warning^7: item ", name, " is already registered, ^1 cant register the same item twice ^7", resource or "")
 		print("^5Info:^7 if you restarting a script this is normal and you can ignore it!.^7")
 	end
+	resource = resource or GetInvokingResource()
+	if type(resource) == "string" and resource ~= "" and not UsableItemResources[resource] then
+		UsableItemResources[resource] = true
+		persistUsableItemResources()
+	end
 	UsableItemsFunctions[name] = cb
 end
 
@@ -228,6 +329,36 @@ function InventoryAPI.unRegisterUsableItem(name)
 end
 
 exports("unRegisterUsableItem", InventoryAPI.unRegisterUsableItem)
+
+function InventoryAPI.tryRecoverUsableItemRegistrations()
+	if recoveryDone then
+		return false
+	end
+	if (os.time() - resourceStartedAt) > 120 then
+		return false
+	end
+	recoveryDone = true
+	local current = GetCurrentResourceName()
+	if not next(UsableItemResources) then
+		local detected = detectUsableItemResources()
+		for _, res in ipairs(detected) do
+			UsableItemResources[res] = true
+		end
+		if next(UsableItemResources) then
+			persistUsableItemResources()
+		end
+	end
+	local restartedAny = false
+	for res, enabled in pairs(UsableItemResources) do
+		if enabled and type(res) == "string" and res ~= "" and res ~= current then
+			if GetResourceState(res) == "started" then
+				ExecuteCommand(("restart %s"):format(res))
+				restartedAny = true
+			end
+		end
+	end
+	return restartedAny
+end
 
 
 --- THIS EXPORT SHOULD ONLY BE USED FOR NORMAL ITEMS NOTHING ELSE for items with decay and metadata use the getUserInventoryItems they are unique items

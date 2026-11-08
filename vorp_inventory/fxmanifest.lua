@@ -12,6 +12,7 @@ lua54 'yes'
 shared_scripts {
   "config/config.lua",
   "config/config_items.lua",
+  "config/config_crafting.lua",
   "config/groups.lua",
   "config/weapons.lua",
   "config/ammo.lua",
@@ -23,7 +24,9 @@ shared_scripts {
 }
 
 client_scripts {
+  'client/restart_handler.lua',
   'client/exports.lua',
+  'client/services/CurrencyItemService.lua', -- Nuevo servicio
   'client/client.lua',
   'client/models/*.lua',
   'client/services/*.lua',
@@ -34,12 +37,17 @@ client_scripts {
 server_scripts {
   "config/logs.lua",
   '@oxmysql/lib/MySQL.lua',
+  'server/restart_handler.lua',
   'server/vorpInventoryApi.lua',
+  'server/services/CurrencyItemService.lua', -- Nuevo servicio
+  'server/services/MoneyEnvelopeService.lua', -- Servicio de sobres de dinero
+  'server/services/CurrencyInterceptor.lua', -- Interceptor de eventos de moneda
   'server/server.lua',
   'server/models/*.lua',
   'server/services/*.lua',
   'server/controllers/*.lua',
   'server/respawn.lua',
+  'server/usable_items.lua', -- Registrar items usables (debe ir al final)
 
 }
 

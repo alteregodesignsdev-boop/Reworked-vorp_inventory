@@ -55,9 +55,22 @@ function Item:canUseExpiredItem()
 	return self.useExpired
 end
 
+local function getCurrentTime()
+	if os and type(os.time) == "function" then
+		return os.time()
+	end
+	if GlobalState and GlobalState.TimeNow then
+		return GlobalState.TimeNow
+	end
+	if GetCloudTimeAsInt then
+		return GetCloudTimeAsInt()
+	end
+	return 0
+end
+
 -- DEGRADATION
 function Item:setDegradation(degradation)
-	self.degradation = degradation or os.time()
+	self.degradation = degradation or getCurrentTime()
 end
 
 function Item:getElapsedTime(maxDegradation, percentage)
@@ -87,7 +100,7 @@ function Item:getPercentage(maxDegradation, degradation)
 	if maxDegradation ~= nil and degradation ~= nil then
 		local isDegradable = maxDegradation > 0
 		if isDegradable then
-			local elapsedSeconds = os.time() - degradation
+			local elapsedSeconds = getCurrentTime() - degradation
 			local maxDegradeSeconds = maxDegradation * 60
 			local percentage = math.max(0, ((maxDegradeSeconds - elapsedSeconds) / maxDegradeSeconds) * 100)
 			percentage = math.floor(percentage)
@@ -99,7 +112,7 @@ function Item:getPercentage(maxDegradation, degradation)
 
 	local isDegradable = self.maxDegradation and self.maxDegradation > 0
 	if isDegradable and self.degradation then
-		local elapsedSeconds = os.time() - self.degradation
+		local elapsedSeconds = getCurrentTime() - self.degradation
 		local maxDegradeSeconds = self.maxDegradation * 60
 		local percentage = math.max(0, ((maxDegradeSeconds - elapsedSeconds) / maxDegradeSeconds) * 100)
 		self.percentage = math.floor(percentage)

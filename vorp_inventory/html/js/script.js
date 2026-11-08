@@ -1,10 +1,12 @@
 $("document").ready(function () {
 
-    $("#secondInventoryHud").draggable();
-    $("#inventoryHud").draggable();
+    // Inventario secundario ya NO es draggable - siempre fijo
+    // $("#secondInventoryHud").draggable();
+    // HUD principal ya NO es draggable - siempre fijo
+    // $("#inventoryHud").draggable();
 
-    // Toggle: initial state allows moving the HUD (items not draggable)
-    window.inventoryMoveEnabled = true;
+    // Toggle: HUD siempre fijo, items siempre movibles
+    window.inventoryMoveEnabled = false; // Siempre en modo "items movibles"
 
     function updateInventoryMoveToggleUI() {
         const btn = document.getElementById('moveToggleBtn');
@@ -17,58 +19,51 @@ $("document").ready(function () {
     }
 
     // Persistencia de posición del HUD por jugador
-    function getPlayerKey(){
+    function getPlayerKey() {
         try {
             if (window.currentPlayerId !== undefined && window.currentPlayerId !== null) {
                 return String(window.currentPlayerId);
             }
-        } catch(e) {}
+        } catch (e) { }
         return 'default';
     }
-    function saveHudPosition(){
+    function saveHudPosition() {
         try {
             const $hud = $("#inventoryHud");
             const pos = $hud.position();
             const data = { left: Math.round(pos.left || parseInt($hud.css('left')) || 0), top: Math.round(pos.top || parseInt($hud.css('top')) || 0) };
-            localStorage.setItem(`hudPos:${getPlayerKey()}` , JSON.stringify(data));
-        } catch(e) { /* noop */ }
+            localStorage.setItem(`hudPos:${getPlayerKey()}`, JSON.stringify(data));
+        } catch (e) { /* noop */ }
     }
 
-    window.setInventoryMoveEnabled = function(enabled){
-        window.inventoryMoveEnabled = !!enabled;
+    window.setInventoryMoveEnabled = function (enabled) {
+        // Forzar siempre a false (items movibles, HUD fijo)
+        window.inventoryMoveEnabled = false;
+
         // Limpiar modo MOVE al cambiar estado
-        try { window.cancelMoveMode(); } catch(e) {}
+        try { window.cancelMoveMode(); } catch (e) { }
+
         const mainHud = $("#inventoryHud");
         const secondHud = $("#secondInventoryHud");
-        if (window.inventoryMoveEnabled) {
-            // Asegurar inicialización y habilitar drag en ambos HUDs
-            try { mainHud.draggable('enable'); } catch(e) { mainHud.draggable(); }
-            try { secondHud.draggable('enable'); } catch(e) { secondHud.draggable(); }
-            // Desactivar reordenamiento de ítems cuando el HUD se puede mover
-            if (typeof deactivateMainInventoryReorder === 'function') {
-                deactivateMainInventoryReorder();
-            } else {
-                try { $("#inventoryElement .item").draggable("destroy"); } catch(e) {}
-                try { $("#inventoryElement .item").droppable("destroy"); } catch(e) {}
-            }
-        } else {
-            // Deshabilitar movimiento del HUD principal y secundario
-            try { mainHud.draggable('disable'); } catch(e) {}
-            try { secondHud.draggable('disable'); } catch(e) {}
-            // Activar reordenamiento cuando el HUD está fijo
-            if (typeof activateMainInventoryReorder === 'function') {
-                activateMainInventoryReorder();
-            }
-            // Guardar posición del HUD al desactivar movimiento
-            saveHudPosition();
+
+        // HUD principal siempre deshabilitado (fijo)
+        try { mainHud.draggable('disable'); } catch (e) { }
+
+        // HUD secundario también siempre deshabilitado (fijo)
+        try { secondHud.draggable('disable'); } catch (e) { }
+
+        // Siempre activar reordenamiento de items
+        if (typeof activateMainInventoryReorder === 'function') {
+            activateMainInventoryReorder();
         }
+
         updateInventoryMoveToggleUI();
     };
 
     // Enlazar el botón toggle inmediatamente (DOM ya cargado)
     const btn = document.getElementById('moveToggleBtn');
-    if (btn){
-        btn.addEventListener('click', function(){
+    if (btn) {
+        btn.addEventListener('click', function () {
             window.setInventoryMoveEnabled(!window.inventoryMoveEnabled);
         });
         updateInventoryMoveToggleUI();
@@ -95,6 +90,19 @@ $("document").ready(function () {
         }
     });
 
+    // Observar cambios en capacidad secundaria del DOM para sincronizar automáticamente el menú de información
+    try {
+        const targetCap = document.getElementById("capacity-value");
+        const targetCur = document.getElementById("current-cap-value");
+        const observer = new MutationObserver(function () {
+            if (typeof window.updateWeightDisplay === 'function') {
+                window.updateWeightDisplay();
+            }
+        });
+        if (targetCap) observer.observe(targetCap, { childList: true, characterData: true, subtree: true });
+        if (targetCur) observer.observe(targetCur, { childList: true, characterData: true, subtree: true });
+    } catch (e) { }
+
     initSecondaryInventoryHandlers();
 });
 
@@ -104,6 +112,70 @@ window.onload = initDivMouseOver;
 let stopTooltip = false;
 window.__pendingSecondToMainSlotAssignment = window.__pendingSecondToMainSlotAssignment || null;
 window.__lastMainItemIds = window.__lastMainItemIds || null;
+
+window.mainWeightCurrent = window.mainWeightCurrent || "0";
+window.mainWeightMax = window.mainWeightMax || "0";
+window.secondCurrentCap = window.secondCurrentCap || null;
+window.secondCapacityValue = window.secondCapacityValue || null;
+window.isSecondaryOpen = false;
+
+window.updateWeightDisplay = function updateWeightDisplay() {
+    const $check = $('#check');
+    if (!$check.length) return;
+
+    const measure = (typeof Config !== 'undefined' && Config && Config.WeightMeasure) ? Config.WeightMeasure : "KG";
+    const mainCurrent = (window.mainWeightCurrent !== undefined && window.mainWeightCurrent !== null) ? window.mainWeightCurrent : (typeof checkxy !== 'undefined' ? checkxy : "0");
+    const mainMax = (window.mainWeightMax !== undefined && window.mainWeightMax !== null) ? window.mainWeightMax : (typeof infoxy !== 'undefined' ? infoxy : "0");
+    const mainText = `${mainCurrent}/${mainMax} ${measure}`;
+
+    // Detectar si el inventario secundario está abierto
+    const isSecOpen = window.isSecondaryOpen === true || $('#secondInventoryHud').is(':visible');
+
+    // Obtener capacidad secundaria con múltiples fallbacks seguros
+    let secCap = window.secondCapacityValue;
+    if (!secCap || secCap === "0" || secCap === 0) {
+        const domCap = (document.getElementById("capacity-value")?.textContent || $('#capacity-value').text() || '').trim();
+        if (domCap && domCap !== "0") {
+            secCap = domCap;
+            window.secondCapacityValue = domCap;
+        }
+    }
+
+    // Obtener cantidad actual del secundario
+    let secCurrent = window.secondCurrentCap;
+    if (secCurrent === null || secCurrent === undefined) {
+        const domCur = (document.getElementById("current-cap-value")?.textContent || $('#current-cap-value').text() || '').trim();
+        if (domCur !== '') {
+            secCurrent = domCur;
+            window.secondCurrentCap = domCur;
+        } else {
+            secCurrent = 0;
+        }
+    }
+
+    const showSecondary = isSecOpen && (secCap !== null && secCap !== undefined && secCap !== "0" && secCap !== 0 && secCap !== "");
+
+    if (showSecondary) {
+        const secText = `${secCurrent}/${secCap}`;
+        $check.removeClass('single-weight').addClass('dual-weight');
+        $check.html(`
+            <div class="weight-row main-weight-row">
+                <span class="weight-text">${mainText}</span>
+            </div>
+            <div class="weight-row second-weight-row">
+                <span class="weight-text">${secText}</span>
+            </div>
+        `);
+    } else {
+        $check.removeClass('dual-weight').addClass('single-weight');
+        $check.html(`
+            <div class="weight-row main-weight-row">
+                <span class="weight-text">${mainText}</span>
+            </div>
+        `);
+    }
+};
+var updateWeightDisplay = window.updateWeightDisplay;
 
 window.addEventListener('message', function (event) {
 
@@ -151,10 +223,12 @@ window.addEventListener('message', function (event) {
         Config.DoubleClickToUse = LuaConfig.DoubleClickToUse;
         Config.UseRolItem = LuaConfig.UseRolItem;
         Config.WeightMeasure = LuaConfig.WeightMeasure;
+        Config.MaxInventorySlots = LuaConfig.MaxInventorySlots || 16; // Default 16 if not set
         // Fetch the Actions configuration from Lua
         loadActionsConfig().then(actionsConfig => {
             generateActionButtons(actionsConfig, 'carousel1', 'inventoryElement', 'dropdownButton');
             generateActionButtons(actionsConfig, 'staticCarousel', 'secondInventoryElement', 'dropdownButton1');
+            document.querySelector(`.dropdownButton[data-param="all"][data-type="itemtype"]`)?.classList.add('active');
         }).catch(error => {
             console.error("Failed to load or process the Actions configuration:", error);
         });
@@ -195,7 +269,7 @@ window.addEventListener('message', function (event) {
         if (event.data.id) {
             $("#id-value").text("ID " + event.data.id);
             // Capturar el id del jugador para key de persistencia
-            try { window.currentPlayerId = event.data.id; } catch(e) {}
+            try { window.currentPlayerId = event.data.id; } catch (e) { }
         }
 
     } else if (event.data.action == "transaction") {
@@ -212,11 +286,11 @@ window.addEventListener('message', function (event) {
 
     //main inv update weight
     if (event.data.action == "changecheck") {
-        checkxy = event.data.check
-        infoxy = event.data.info
-
-        $('#check').html('')
-        $("#check").append(`<button id='check'>${checkxy}/${infoxy + " " + Config.WeightMeasure}</button>`);
+        checkxy = event.data.check;
+        infoxy = event.data.info;
+        window.mainWeightCurrent = checkxy;
+        window.mainWeightMax = infoxy;
+        window.updateWeightDisplay();
     }
 
     //main inv
@@ -225,24 +299,74 @@ window.addEventListener('message', function (event) {
         moveInventory("main");
         if (event.data.type != 'main') {
             moveInventory("second");
+            window.isSecondaryOpen = true;
+        } else {
+            window.isSecondaryOpen = false;
+            window.secondCapacityValue = null;
+            window.secondCurrentCap = null;
         }
         $("#inventoryHud").fadeIn();
+
+        // Mostrar quickslot HUD cuando se abre el inventario principal
+        if (typeof setQuickslotHudVisible === 'function') {
+            setQuickslotHudVisible(true);
+        }
+
+        window.mainWeightCurrent = checkxy;
+        window.mainWeightMax = infoxy;
+
         $(".controls").remove();
         $("#inventoryHud").append(
-            `<div class='controls'><div class='controls-center'><input type='text' id='search' placeholder='${LANGUAGE.inventorysearch}'/input><button id='check'>${checkxy}/${infoxy + " " + Config.WeightMeasure}</button></div><button id='close'>${LANGUAGE.inventoryclose}</button></div></div>`
+            `<div class='controls'><div class='controls-center'><input type='text' id='search' placeholder='${LANGUAGE.inventorysearch}'/><div id='check' class='single-weight'></div></div><button id='close'>${LANGUAGE.inventoryclose}</button></div></div>`
         );
+        window.updateWeightDisplay();
+        setTimeout(window.updateWeightDisplay, 50);
+        setTimeout(window.updateWeightDisplay, 200);
 
-        $("#search").bind("input", function () {
-            var searchFor = $("#search").val().toLowerCase();
+        // Reset category to 'all' when opening inventory
+        window.currentActiveCategory = 'all';
+        document.querySelectorAll('.dropdownButton[data-type="itemtype"]').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`.dropdownButton[data-param="all"][data-type="itemtype"]`)?.classList.add('active');
+
+        $("#search").off("input").on("input", function () {
+            const searchFor = ($(this).val() || "").trim().toLowerCase();
+            const activeCat = window.currentActiveCategory || 'all';
+            const catTypes = (window.Actions && window.Actions[activeCat]) ? window.Actions[activeCat].types : [];
+
             $("#inventoryElement .item").each(function () {
-                var label = $(this).data("label");
-                if (label) {
-                    label = label.toLowerCase();
-                    if (label.indexOf(searchFor) < 0) {
-                        $(this).hide();
-                    } else {
-                        $(this).show();
-                    }
+                const $it = $(this);
+                const rawGroup = $it.data("group") !== undefined ? $it.data("group") : $it.attr("data-group");
+                const group = Number(rawGroup);
+                const itemId = ($it.attr('id') || '').toString();
+                const isGunbelt = (itemId === 'item-gunbelt');
+                const isAmmoItem = isGunbelt || itemId.toLowerCase().startsWith('item-ammo') || group === 6;
+
+                let matchCat = false;
+                if (!catTypes || catTypes.length === 0) {
+                    matchCat = true;
+                } else if (catTypes.some(t => Number(t) === 6) && isAmmoItem) {
+                    matchCat = true;
+                } else if (isGunbelt && catTypes.some(t => Number(t) === 1)) {
+                    matchCat = true;
+                } else if (catTypes.some(t => Number(t) === group)) {
+                    matchCat = true;
+                }
+
+                if (!matchCat) {
+                    $it.hide();
+                    return;
+                }
+
+                if (!searchFor) {
+                    $it.show();
+                    return;
+                }
+
+                const label = ($it.data("label") || $it.attr("data-label") || "").toString().toLowerCase();
+                if (label.indexOf(searchFor) >= 0) {
+                    $it.show();
+                } else {
+                    $it.hide();
                 }
             });
         });
@@ -300,16 +424,25 @@ window.addEventListener('message', function (event) {
             initiateSecondaryInventory(event.data.title, event.data.capacity)
         }
 
+        if (event.data.type != 'main') {
+            window.isSecondaryOpen = true;
+            if (event.data.capacity) {
+                window.secondCapacityValue = (event.data.weight ? event.data.weight + " " + (Config.WeightMeasure || "KG") : event.data.capacity);
+            }
+            window.updateWeightDisplay();
+            setTimeout(window.updateWeightDisplay, 50);
+            setTimeout(window.updateWeightDisplay, 200);
+        }
 
         disabled = false;
 
-        if (event.data.autofocus == true) {
-            $(document).on('keydown', function (event) {
-                if (!(event.target && event.target.id === 'secondarysearch')) {
-                    $("#search").focus();
-                }
-            });
-        }
+        // Desactivado autofocus automático del buscador para permitir uso de teclas rápidas
+        // El buscador solo se activará si el jugador hace clic directamente en el input
+        $(document).on('keydown', '#search, #secondarysearch', function (e) {
+            if (e.key === 'Escape' || e.key === 'Enter') {
+                $(this).blur();
+            }
+        });
 
         $("#close").on('click', function (event) {
             closeInventory();
@@ -317,12 +450,32 @@ window.addEventListener('message', function (event) {
 
     } else if (event.data.action == "hide") {
         // Guardar la posición al cerrar el inventario
-        try { saveHudPosition(); } catch(e) {}
+        try { saveHudPosition(); } catch (e) { }
         $('.tooltip').remove();
+        if (typeof window.clearItemPanel === 'function') {
+            window.clearItemPanel();
+        } else {
+            $("#item-actions-panel").empty();
+            $("#inventoryElement .item").removeClass('panel-item-active');
+            window.currentPanelItem = null;
+            try { OverSetTitle(" "); OverSetDesc(" "); } catch (e) { }
+        }
         $("#inventoryHud").fadeOut();
+
+        // Ocultar quickslot HUD cuando se cierra el inventario principal
+        if (typeof setQuickslotHudVisible === 'function') {
+            setQuickslotHudVisible(false);
+        }
+
         $(".controls").fadeOut();
         $(".site-cm-box").remove();
         $("#secondInventoryHud").fadeOut();
+        window.isSecondaryOpen = false;
+        window.secondCapacityValue = null;
+        window.secondCurrentCap = null;
+        if (typeof updateWeightDisplay === 'function') {
+            updateWeightDisplay();
+        }
         $(".controls").fadeOut();
         $(".site-cm-box").remove();
         if ($('#character-selection').is(":visible")) {
@@ -332,21 +485,56 @@ window.addEventListener('message', function (event) {
         dialog.close();
         stopTooltip = true;
     } else if (event.data.action == "setItems") {
-        TIME_NOW = event.data.timenow
+        TIME_NOW = event.data.timenow || Math.floor(Date.now() / 1000);
+        window.serverTimeOffset = (typeof event.data.timenow === 'number')
+            ? (event.data.timenow - Math.floor(Date.now() / 1000))
+            : 0;
 
+        // ANTI-DUPLICACIÓN MEJORADO: Usar timestamp para evitar actualizaciones rápidas duplicadas
+        const now = Date.now();
+        const lastUpdate = window.__lastInventoryUpdate || 0;
+        const timeSinceLastUpdate = now - lastUpdate;
+
+        // ANTI-DUPLICACIÓN: Detectar si estamos recibiendo items duplicados
+        const incomingItems = Array.isArray(event.data.itemList) ? event.data.itemList : [];
         const previousItems = Array.isArray(window.mainItems) ? window.mainItems : [];
-        const previousIds = new Set();
+
+        // Si la actualización es muy rápida (menos de 500ms) y los items son idénticos, ignorar
+        if (timeSinceLastUpdate < 500 && previousItems.length > 0 && incomingItems.length > 0) {
+            const previousIds = new Set();
+            const incomingIds = new Set();
+
+            for (const it of previousItems) {
+                if (it && it.id) previousIds.add(String(it.id));
+            }
+            for (const it of incomingItems) {
+                if (it && it.id) incomingIds.add(String(it.id));
+            }
+
+            // Si los IDs son idénticos y la actualización es muy rápida, probablemente es duplicada
+            const sameIds = previousIds.size === incomingIds.size &&
+                [...previousIds].every(id => incomingIds.has(id));
+
+            if (sameIds) {
+                // Silenciosamente ignorar duplicados (sistema funcionando correctamente)
+                return; // Ignorar esta actualización
+            }
+        }
+
+        // Actualizar timestamp
+        window.__lastInventoryUpdate = now;
+
         const previousIdentities = new Set();
         for (const it of previousItems) {
             const id = (it && it.id !== undefined && it.id !== null) ? String(it.id) : null;
-            if (id && id !== '0') previousIds.add(id);
+            if (id && id !== '0') previousIdentities.add(id);
             try {
                 if (typeof itemBaseKey === 'function' && typeof itemMetaHash === 'function') {
                     const k = itemBaseKey(it);
                     const m = itemMetaHash(it);
                     if (k && m) previousIdentities.add(`${String(k)}|${String(m)}`);
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         try {
@@ -453,16 +641,10 @@ window.addEventListener('message', function (event) {
 
         inventorySetup(event.data.itemList);
 
-        // Actualizar HUD de quickslots inmediatamente tras cargar items
+        // Actualizar datos del HUD de quickslots tras cargar items (sin forzar apertura)
         try {
             if (typeof updateQuickslotHudFromMain === 'function') {
                 updateQuickslotHudFromMain();
-            }
-            // Asegurar que el HUD quede visible si hay items cargados
-            if (Array.isArray(event.data.itemList) && event.data.itemList.length && typeof setQuickslotHudVisible === 'function') {
-                if (!window.quickslotHudVisible) {
-                    setQuickslotHudVisible(true);
-                }
             }
         } catch (e) { /* noop */ }
 
@@ -522,7 +704,10 @@ window.addEventListener('message', function (event) {
         }
         let weight = null
         //amount of items in Inventory
-        secondarySetCurrentCapacity(total, weight)
+        secondarySetCurrentCapacity(total, weight);
+        if (typeof window.updateWeightDisplay === 'function') {
+            window.updateWeightDisplay();
+        }
     } else if (event.data.action == "nearPlayers") {
         if (event.data.what == "give") {
             selectPlayerToGive(event.data);

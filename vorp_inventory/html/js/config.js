@@ -8,3 +8,4 @@ Config.DoubleClickToUse = true;
 Config.WeightMeasure = "kg";
 Config.MaxItemTransferAmount = 200;
 Config.EnableCopySerial = true;
+Config.MaxInventorySlots = 16; // Maximum number of visible slots in inventory

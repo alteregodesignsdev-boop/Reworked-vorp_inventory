@@ -35,77 +35,115 @@ local function moveInventoryItem(inventoryId, old, new, slot)
 end
 
 local function addWeapon(weapon, slot, id)
+	local playerPedId = PlayerPedId()
+	local weaponHash  = joaat(weapon)
+	local reason      = joaat("ADD_REASON_DEFAULT")
+	local inventoryId = 1
+
+	-- Comprobar validez de la clave en la base de datos de objetos
+	local isValid = Citizen.InvokeNative(0x6D5D51B188333FD1, weaponHash, 0) -- ItemdatabaseIsKeyValid
+	if not isValid then
+		print("^3[vorp_inventory]^7 Clave de arma no válida: " .. tostring(weapon))
+		return false
+	end
+
+	local characterItem = getGuidFromItemId(inventoryId, nil, joaat("CHARACTER"), 0xA1212100)
+	if not characterItem then
+		print("^3[vorp_inventory]^7 no characterItem")
+		return false
+	end
+
+	local weaponItem = getGuidFromItemId(inventoryId, characterItem:Buffer(), 923904168, -740156546)
+	if not weaponItem then
+		print("^3[vorp_inventory]^7 no weaponItem")
+		return false
+	end
+
+	-- Recuperación automática / reinicio en caliente (hot reload):
+	-- Si slot == 1 (secundaria) pero equippedWeapons está vacío en memoria de este cliente,
+	-- sincronizar el arma primaria existente en UserWeapons antes de añadir la secundaria.
+	if slot == 1 and #equippedWeapons == 0 and UserWeapons then
+		for uid, uw in pairs(UserWeapons) do
+			if uid ~= id and uw:getUsed() and not uw:getUsed2() then
+				local uwHash = joaat(uw:getName())
+				if Citizen.InvokeNative(0x705BE297EEBDB95D, uwHash) and Citizen.InvokeNative(0xD955FEE4B87AFA07, uwHash) then
+					addWeapon(uw:getName(), 0, uid)
+					break
+				end
+			end
+		end
+	end
+
 	if slot == 0 and id then
 		if #equippedWeapons > 0 then
 			slot = 1
 		end
 	end
-	local weaponHash  = joaat(weapon)
-	local sHash       = "SLOTID_WEAPON_" .. tostring(slot)
-	local reason      = joaat("ADD_REASON_DEFAULT")
-	local inventoryId = 1
-	local slotHash    = joaat(sHash)
-	local move        = false
-	local playerPedId = PlayerPedId()
 
-	--Now add it to the characters inventory
-	local isValid     = Citizen.InvokeNative(0x6D5D51B188333FD1, weaponHash, 0) --ItemdatabaseIsKeyValid
-	if not isValid then
-		print("Non valid weapon")
-		return false
-	end
-
-	local characterItem = getGuidFromItemId(inventoryId, nil, joaat("CHARACTER"), 0xA1212100) --return func_1367(joaat("CHARACTER"), func_2485(), -1591664384, bParam0);
-	if not characterItem then
-		print("no characterItem")
-		return false
-	end
-
-	local weaponItem = getGuidFromItemId(inventoryId, characterItem:Buffer(), 923904168, -740156546) --return func_1367(923904168, func_1889(1), -740156546, 0);
-	if not weaponItem then
-		print("no weaponItem")
-		return false
-	end
+	local slotHash = joaat('SLOTID_WEAPON_0')
+	local move = false
 
 	if slot == 1 and id then
 		if #equippedWeapons > 0 then
-			--local newItemData = DataView.ArrayBuffer(8 * 13)
-			local newGUID = moveInventoryItem(inventoryId, equippedWeapons[1].guid, weaponItem:Buffer())
-			if not newGUID then
-				print("can't move item")
-				return false
+			-- Buscar el arma que está en el slot 0 (primaria) para reubicarla al slot 1 (off-hand)
+			local primaryWep = nil
+			for _, w in ipairs(equippedWeapons) do
+				if w.slot == 0 then
+					primaryWep = w
+					break
+				end
 			end
-			slotHash = joaat('SLOTID_WEAPON_0')
-			slot = 0
-			move = true
-		else
-			slotHash = joaat('SLOTID_WEAPON_0')
-			slot = 0
+			if not primaryWep and #equippedWeapons > 0 then
+				primaryWep = equippedWeapons[1]
+			end
+
+			if primaryWep and primaryWep.guid then
+				local newGUID = moveInventoryItem(inventoryId, primaryWep.guid:Buffer(), weaponItem:Buffer(), 1)
+				if newGUID then
+					-- CRUCIAL: Actualizar la referencia al nuevo GUID generado por la nativa
+					primaryWep.guid = newGUID
+					primaryWep.slot = 1
+					move = true
+				else
+					print("^3[vorp_inventory]^7 No se pudo mover el arma primaria al slot 1")
+					return false
+				end
+			end
 		end
 	end
 
 	local itemData = DataView.ArrayBuffer(8 * 13)
-	local isAdded = Citizen.InvokeNative(0xCB5D11F9508A928D, inventoryId, itemData:Buffer(), weaponItem:Buffer(), weaponHash, slotHash, 1, reason) --Actually add the item now
+	local isAdded = Citizen.InvokeNative(0xCB5D11F9508A928D, inventoryId, itemData:Buffer(), weaponItem:Buffer(), weaponHash, slotHash, 1, reason)
 	if not isAdded then
-		print("Not added")
+		print("^3[vorp_inventory]^7 No se pudo añadir el arma a la base de datos de inventario")
 		return false
 	end
 
 	local equipped = Citizen.InvokeNative(0x734311E2852760D0, inventoryId, itemData:Buffer(), true)
 	if not equipped then
-		print("not able to equip")
+		print("^3[vorp_inventory]^7 No se pudo equipar en la base de datos de inventario")
 		return false
 	end
 
-	Citizen.InvokeNative(0x12FB95FE3D579238, playerPedId, itemData:Buffer(), true, slot, false, false)
-	if move then
-		Citizen.InvokeNative(0x12FB95FE3D579238, playerPedId, equippedWeapons[1].guid, true, 1, false, false)
-		TriggerServerEvent("syn_weapons:applyDupeTint", id, itemData:Buffer(), weaponHash)
+	-- Equipar la nueva arma en el ped en el slot 0 (cartuchera derecha / primaria)
+	Citizen.InvokeNative(0x12FB95FE3D579238, playerPedId, itemData:Buffer(), true, 0, false, false)
+
+	-- Si se reubicó el arma primaria al slot 1 (cartuchera izquierda / offhand),
+	-- activarla en el ped usando su NUEVO GUID válido
+	if move and #equippedWeapons > 0 then
+		for _, w in ipairs(equippedWeapons) do
+			if w.slot == 1 and w.guid then
+				Citizen.InvokeNative(0x12FB95FE3D579238, playerPedId, w.guid:Buffer(), true, 1, false, false)
+			end
+		end
 	end
+
 	if id then
 		local nWeapon = {
 			id = id,
-			guid = itemData:Buffer(),
+			guid = itemData,
+			slot = 0,
+			name = weapon
 		}
 		table.insert(equippedWeapons, nWeapon)
 	end
@@ -119,6 +157,18 @@ function Weapon:UnequipWeapon()
 	TriggerServerEvent("vorpinventory:setUsedWeapon", self.id, self:getUsed(), self:getUsed2())
 	self:RemoveWeaponFromPed()
 	Utils.cleanAmmo(self.id)
+
+	-- Si se desequipa el arma primaria y queda un arma secundaria equipada (used2),
+	-- promoverla a primaria (used = true, used2 = false) para que no quede huérfana
+	if UserWeapons then
+		for _, otherW in pairs(UserWeapons) do
+			if otherW:getId() ~= self.id and otherW:getUsed() and otherW:getUsed2() then
+				otherW:setUsed2(false)
+				TriggerServerEvent("vorpinventory:setUsedWeapon", otherW:getId(), true, false)
+				break
+			end
+		end
+	end
 end
 
 function Weapon:RemoveWeaponFromPed()
@@ -128,33 +178,54 @@ function Weapon:RemoveWeaponFromPed()
 
 	local isWeaponAGun = Citizen.InvokeNative(0x705BE297EEBDB95D, joaat(self.name))
 	local isWeaponOneHanded = Citizen.InvokeNative(0xD955FEE4B87AFA07, joaat(self.name))
-	local move = false
 	local playerPedId = PlayerPedId()
 	local inventoryId = 1
 
 	if isWeaponAGun and isWeaponOneHanded then
-		for k, v in pairs(equippedWeapons) do
+		local removeIndex = nil
+		for k, v in ipairs(equippedWeapons) do
 			if v.id == self.id then
-				if #equippedWeapons > 1 then
-					Citizen.InvokeNative(0x3E4E811480B3AE79, 1, v.guid, 1, joaat("ADD_REASON_DEFAULT"))
-					move = true
-				end
-				table.remove(equippedWeapons, k)
+				removeIndex = k
+				break
 			end
 		end
-	end
-	if move then
-		local characterItem = getGuidFromItemId(1, nil, joaat("CHARACTER"), 0xA1212100)
-		if not characterItem then
-			return false
-		end
 
-		local weaponItem = getGuidFromItemId(1, characterItem:Buffer(), 923904168, -740156546)
-		if not weaponItem then
-			return false
+		if removeIndex then
+			local removedWep = equippedWeapons[removeIndex]
+			if removedWep.guid then
+				Citizen.InvokeNative(0x3E4E811480B3AE79, 1, removedWep.guid:Buffer(), 1, joaat("ADD_REASON_DEFAULT"))
+			end
+			table.remove(equippedWeapons, removeIndex)
+
+			-- Si queda otra arma equipada, asegurarse de que quede en el slot 0 (cartuchera primaria)
+			if #equippedWeapons > 0 then
+				local keepWep = equippedWeapons[1]
+				if keepWep.slot == 1 then
+					local characterItem = getGuidFromItemId(1, nil, joaat("CHARACTER"), 0xA1212100)
+					if characterItem then
+						local weaponItem = getGuidFromItemId(1, characterItem:Buffer(), 923904168, -740156546)
+						if weaponItem and keepWep.guid then
+							local newGUID = moveInventoryItem(inventoryId, keepWep.guid:Buffer(), weaponItem:Buffer(), 0)
+							if newGUID then
+								keepWep.guid = newGUID
+								keepWep.slot = 0
+								Citizen.InvokeNative(0x12FB95FE3D579238, playerPedId, keepWep.guid:Buffer(), true, 0, false, false)
+							end
+						end
+					end
+				else
+					if keepWep.guid then
+						Citizen.InvokeNative(0x12FB95FE3D579238, playerPedId, keepWep.guid:Buffer(), true, 0, false, false)
+					end
+				end
+				-- Garantizar que el arma restante permanezca en la cartuchera primaria (attachPoint 2)
+				GiveWeaponToPed(playerPedId, joaat(keepWep.name), 0, false, true, 2, true, 0.5, 1.0, 752097756, false, 0.0, false)
+			else
+				RemoveWeaponFromPed(playerPedId, joaat(self.name), true, 0)
+			end
+		else
+			RemoveWeaponFromPed(playerPedId, joaat(self.name), true, 0)
 		end
-		moveInventoryItem(inventoryId, equippedWeapons[1].guid, weaponItem:Buffer(), 0)
-		Citizen.InvokeNative(0x12FB95FE3D579238, playerPedId, equippedWeapons[1].guid, true, 0, false, false)
 	else
 		RemoveWeaponFromPed(playerPedId, joaat(self.name), true, 0)
 	end

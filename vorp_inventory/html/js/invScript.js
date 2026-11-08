@@ -280,9 +280,23 @@ function scrollCarousel(carouselId, direction) {
 
 let actionsConfigLoaded; // Holds the promise once initialized
 
+const DEFAULT_ACTIONS_CONFIG = {
+    all: { types: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 ], desc: "Todos los objetos", img: "satchel_nav_all.png" },
+    medical: { types: [ 0, 2 ], desc: "Medicina y remedios", img: "satchel_nav_remedies.png" },
+    foods: { types: [ 0, 3 ], desc: "Comida y provisiones", img: "satchel_nav_provisions.png" },
+    weapons: { types: [ 0, 5 ], desc: "Armas", img: "weapon.png" },
+    ammo: { types: [ 0, 6 ], desc: "Municiones", img: "ammo.png" },
+    tools: { types: [ 0, 4 ], desc: "Herramientas y materiales", img: "satchel_nav_materials.png" },
+    animals: { types: [ 0, 8 ], desc: "Materiales de animales", img: "satchel_nav_animals.png" },
+    documents: { types: [ 0, 7 ], desc: "Documentos", img: "satchel_nav_documents.png" },
+    valuables: { types: [ 0, 9 ], desc: "Objetos de valor", img: "satchel_nav_valuables.png" },
+    horse: { types: [ 0, 10 ], desc: "Objetos de caballo", img: "satchel_nav_horse_items.png" },
+    herbs: { types: [ 0, 11 ], desc: "Hierbas", img: "satchel_nav_herbs.png" },
+};
+
 function loadActionsConfig() {
     if (!actionsConfigLoaded) {
-        actionsConfigLoaded = new Promise((resolve, reject) => {
+        actionsConfigLoaded = new Promise((resolve) => {
             fetch(`https://${GetParentResourceName()}/getActionsConfig`, {
                 method: 'POST',
                 headers: {
@@ -291,11 +305,12 @@ function loadActionsConfig() {
             })
                 .then(response => response.json())
                 .then(actionsConfig => {
-                    window.Actions = actionsConfig;
-                    resolve(actionsConfig);
+                    window.Actions = (actionsConfig && Object.keys(actionsConfig).length > 0) ? actionsConfig : DEFAULT_ACTIONS_CONFIG;
+                    resolve(window.Actions);
                 })
-                .catch(error => {
-                    reject(error);
+                .catch(() => {
+                    window.Actions = DEFAULT_ACTIONS_CONFIG;
+                    resolve(DEFAULT_ACTIONS_CONFIG);
                 });
         });
     }
@@ -307,6 +322,7 @@ function generateActionButtons(actionsConfig, containerId, inventoryContext, but
     const container = document.getElementById(containerId);
 
     if (container) {
+        container.innerHTML = '';
         Object.keys(actionsConfig).forEach(key => {
             const action = actionsConfig[key];
             const button = document.createElement('button');
@@ -314,13 +330,18 @@ function generateActionButtons(actionsConfig, containerId, inventoryContext, but
             button.type = 'button';
             button.setAttribute('data-type', 'itemtype');
             button.setAttribute('data-param', key);
-            button.setAttribute('data-desc', action.desc);
+            button.setAttribute('data-desc', action.desc || key);
+            button.setAttribute('title', action.desc || key);
             button.setAttribute('onclick', `action('itemtype', '${key}', '${inventoryContext}')`);
+
+            if (key === 'all' && inventoryContext === 'inventoryElement') {
+                button.classList.add('active');
+            }
 
             const div = document.createElement('div');
             const img = document.createElement('img');
             img.src = basePath + action.img;
-            img.alt = "Image";
+            img.alt = key;
             div.appendChild(img);
             button.appendChild(div);
             container.appendChild(button);
@@ -336,23 +357,37 @@ function generateActionButtons(actionsConfig, containerId, inventoryContext, but
 function action(type, param, inv) {
     if (type === 'itemtype') {
         if (inv === "inventoryElement") {
+            window.currentActiveCategory = param;
             document.querySelectorAll('.dropdownButton[data-type="itemtype"]').forEach(btn => btn.classList.remove('active'));
             const activeButtonMain = document.querySelector(`.dropdownButton[data-param="${param}"][data-type="itemtype"]`);
             if (activeButtonMain) activeButtonMain.classList.add('active');
         } else if (inv === "secondInventoryElement") {
+            window.currentActiveCategorySecond = param;
             document.querySelectorAll('.dropdownButton1').forEach(btn => {
                 if (btn.getAttribute('data-type') === 'itemtype') btn.classList.remove('active');
             });
             const activeButtonSecond = document.querySelector(`.dropdownButton1[data-param="${param}"][data-type="itemtype"]`);
             if (activeButtonSecond) activeButtonSecond.classList.add('active');
         }
-        if (param in Actions) {
-            const action = Actions[param];
-            showItemsByType(action.types, inv);
-        } else {
-            const defaultAction = Actions['all'];
-            showItemsByType(defaultAction.types, inv);
+
+        const actionsMap = window.Actions || DEFAULT_ACTIONS_CONFIG;
+        let types = [];
+        if (actionsMap && (param in actionsMap)) {
+            types = actionsMap[param].types || [];
+        } else if (actionsMap && actionsMap['all']) {
+            types = actionsMap['all'].types || [];
         }
+
+        showItemsByType(types, inv);
+
+        // Si el item seleccionado en el panel de detalles quedó oculto por el filtro, limpiarlo
+        try {
+            if (window.currentPanelItem && !window.currentPanelItem.is(':visible')) {
+                if (typeof window.clearItemPanel === 'function') {
+                    window.clearItemPanel();
+                }
+            }
+        } catch (e) {}
     } else if (type === 'clothing') {
         const clickedButton = document.querySelector(`.dropdownButton[data-param="${param}"][data-type="clothing"], .dropdownButton1[data-param="${param}"][data-type="clothing"]`);
         if (clickedButton) {
@@ -366,41 +401,59 @@ function action(type, param, inv) {
 
 /* FILTER ITEMS BY TYPE */
 function showItemsByType(itemTypesToShow, inv) {
-    let itemDiv = 0;
-    let itemEmpty = 0;
     $(`#${inv} .item`).each(function () {
-        const group = $(this).data("group");
+        const $this = $(this);
+        // Descartar casillas vacías residuales sin id ni label si las hubiera
+        if ($this.attr('data-group') === '0' && !$this.attr('id') && !$this.data('label')) {
+            $this.remove();
+            return;
+        }
 
-        if (itemTypesToShow.length === 0 || itemTypesToShow.includes(group)) {
-            if (group != 0) {
-                itemDiv = itemDiv + 1;
-            } else {
-                itemEmpty = itemEmpty + 1;
+        const rawGroup = $this.data("group") !== undefined ? $this.data("group") : $this.attr("data-group");
+        const group = Number(rawGroup);
+        const itemId = ($this.attr('id') || '').toString();
+        const isGunbelt = (itemId === 'item-gunbelt');
+        const isAmmoItem = isGunbelt || itemId.toLowerCase().startsWith('item-ammo') || group === 6;
+
+        let isMatch = false;
+        if (!itemTypesToShow || itemTypesToShow.length === 0) {
+            isMatch = true;
+        } else if (itemTypesToShow.some(t => Number(t) === 6) && isAmmoItem) {
+            // La cartuchera y todos los items de munición pertenecen a la categoría ammo (grupo 6)
+            isMatch = true;
+        } else if (isGunbelt && itemTypesToShow.some(t => Number(t) === 1)) {
+            // La cartuchera pertenece también a 'all'
+            isMatch = true;
+        } else if (itemTypesToShow.some(t => Number(t) === group)) {
+            isMatch = true;
+        }
+
+        // Si además el jugador tiene texto en el buscador, aplicar ambos filtros de forma conjunta
+        if (isMatch && inv === "inventoryElement") {
+            const searchVal = $("#search").val();
+            if (searchVal && searchVal.trim().length > 0) {
+                const searchFor = searchVal.trim().toLowerCase();
+                const label = ($this.data("label") || $this.attr("data-label") || "").toString().toLowerCase();
+                if (label.indexOf(searchFor) < 0) {
+                    isMatch = false;
+                }
             }
-            $(this).show();
+        }
+
+        if (isMatch) {
+            $this.show();
         } else {
-            $(this).hide();
+            $this.hide();
         }
     });
-
-    if (itemDiv < 12) {
-        if (itemEmpty > 0) {
-            for (let i = 0; i < itemEmpty; i++) {
-                $(`#${inv} .item[data-group="0"]`).remove();
-            }
-        }
-        /* if itemDiv is less than 12 then create the rest od the divs */
-        const emptySlots = 16 - itemDiv;
-        for (let i = 0; i < emptySlots; i++) {
-            $(`#${inv}`).append(`<div data-group="0" class="item"></div>`);
-        }
-    }
-
 }
 
 $(document).ready(function () {
 
     $(document).on('mouseenter', '.item', function () {
+
+        // En el inventario principal y secundario, toda la información se muestra en el panel fijo lateral derecho compartido (#item-details-panel)
+        if ($(this).closest('#inventoryElement, #secondInventoryElement').length) return;
 
         if ($(this).data('tooltip') && !stopTooltip) {
 
@@ -429,9 +482,530 @@ $(document).ready(function () {
     });
 });
 
+// Renderizar botones de acción en el panel lateral fijo (derecho)
+window.renderItemActionsInPanel = function($el) {
+    const $container = $("#item-actions-panel");
+    if (!$container.length) return;
+    $container.empty();
+
+    if (!$el || !$el.length) return;
+    const item = $el.data('item');
+    if (!item) return;
+
+    let actions = $el.data('panelActions') || [];
+
+    // Si no tiene la acción USAR/EQUIPAR y no es dinero:
+    const isMoney = $el.data('isMoney') || item.type === "item_money";
+    const hasUseAction = actions.some(a => a.text === (typeof LANGUAGE !== 'undefined' && LANGUAGE ? LANGUAGE.use : "Use") || a.text === (typeof LANGUAGE !== 'undefined' && LANGUAGE ? LANGUAGE.equip : "Equip") || a.text === (typeof LANGUAGE !== 'undefined' && LANGUAGE ? LANGUAGE.unequip : "Unequip"));
+    if (!hasUseAction && !isMoney && item.type !== "item_ammo" && $el.attr('id') !== 'item-gunbelt') {
+        const useText = (item.type === "item_weapon") 
+            ? ((item.used || item.used2) ? ((typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.unequip) ? LANGUAGE.unequip : "DESEQUIPAR") : ((typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.equip) ? LANGUAGE.equip : "EQUIPAR"))
+            : ((typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.use) ? LANGUAGE.use : "USAR");
+        const useAction = {
+            text: useText,
+            action: function() {
+                const now = Date.now();
+                const spamDelay = (window.Config?.SpamDelay ?? 5000);
+                const until = (window.uiUseCooldownUntil ?? 0);
+                if (now < until) return;
+
+                if (item.used || item.used2) {
+                    $el.find('.equipped-icon').hide();
+                    $.post(`https://${GetParentResourceName()}/UnequipWeapon`, JSON.stringify({
+                        item: item.name,
+                        id: item.id,
+                    }));
+                } else {
+                    if (item.type === "item_weapon") {
+                        $el.find('.equipped-icon').show();
+                    }
+                    $.post(`https://${GetParentResourceName()}/UseItem`, JSON.stringify({
+                        item: item.name,
+                        type: item.type,
+                        hash: item.hash,
+                        amount: item.count,
+                        id: item.id,
+                    }));
+                }
+                window.uiUseCooldownUntil = now + spamDelay;
+            }
+        };
+        actions = [useAction, ...actions];
+    }
+
+    // Teclas asignadas para cada uno de los 4 cajones
+    const actionKeys = ['E', 'G', 'X', 'C'];
+
+    // Renderizar hasta 4 acciones (uno por cada recuadro del fondo)
+    actions.slice(0, 4).forEach((act, idx) => {
+        const key = actionKeys[idx] || '';
+        let displayText = String(act.text || '');
+        if (/empaquetar/i.test(displayText)) {
+            displayText = 'EMPAQUETAR';
+        }
+        const $btn = $(`
+            <button class="panel-action-btn" type="button" data-key="${key}">
+                <span class="panel-action-key">${key}</span>
+                <span class="panel-action-text">${displayText}</span>
+            </button>
+        `);
+        $btn.data('action', act.action);
+        $container.append($btn);
+    });
+
+    // Panel lateral para municiones adicionales de la cartuchera (fondo menu_infoink.png)
+    const $lateralPanel = $("#gunbelt-ammo-panel");
+    const $lateralContainer = $("#gunbelt-ammo-buttons");
+    if ($lateralContainer.length) $lateralContainer.empty();
+
+    const isGunbelt = ($el.attr('id') === 'item-gunbelt') || (item === 'gunbelt') || (item && item.name === 'gunbelt') || ($el.data('item') === 'gunbelt');
+
+    if (isGunbelt && actions.length > 4) {
+        const lateralKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'F', 'R', 'T', 'Y', 'V'];
+        const extraActions = actions.slice(4);
+        extraActions.forEach((act, idx) => {
+            const key = lateralKeys[idx] || (idx + 1 <= 9 ? String(idx + 1) : '');
+            let displayText = String(act.text || '');
+            const $btn = $(`
+                <button class="lateral-ammo-btn" type="button" data-key="${key}">
+                    <span class="lateral-ammo-key">${key}</span>
+                    <span class="lateral-ammo-text">${displayText}</span>
+                </button>
+            `);
+            $btn.data('action', act.action);
+            $lateralContainer.append($btn);
+        });
+        if ($lateralPanel.length) $lateralPanel.fadeIn(120);
+    } else {
+        if ($lateralPanel.length) $lateralPanel.hide();
+    }
+};
+
+window.clearPanelTimeout = null;
+
+window.getItemDurability = function(item) {
+    if (!item) return null;
+
+    // 1. Degradación temporal dinámica (alimentos, perecederos con degradación por tiempo)
+    const maxDeg = Number(item.maxDegradation);
+    if (!isNaN(maxDeg) && maxDeg > 0) {
+        const deg = Number(item.degradation);
+        if (!isNaN(deg) && deg > 0) {
+            const offset = (typeof window.serverTimeOffset === 'number') ? window.serverTimeOffset : 0;
+            const now = Math.floor(Date.now() / 1000) + offset;
+            const maxDegradeSeconds = maxDeg * 60;
+            const elapsedSeconds = now - deg;
+            if (elapsedSeconds <= 0) return 100;
+            if (elapsedSeconds >= maxDegradeSeconds) return 0;
+            const pct = ((maxDegradeSeconds - elapsedSeconds) / maxDegradeSeconds) * 100;
+            return Math.max(0, Math.min(100, pct));
+        } else if (deg === 0) {
+            return 0; // Expirado
+        } else if (typeof item.percentage === 'number' && item.percentage >= 0) {
+            return Math.min(100, Math.max(0, item.percentage));
+        } else {
+            return 100;
+        }
+    }
+
+    // 2. Durabilidad en metadata (armas personalizadas, herramientas)
+    if (item.metadata) {
+        if (typeof item.metadata.durability === 'number') {
+            return Math.min(100, Math.max(0, item.metadata.durability));
+        }
+        if (typeof item.metadata.percentage === 'number') {
+            return Math.min(100, Math.max(0, item.metadata.percentage));
+        }
+        if (typeof item.metadata.degradation === 'number') {
+            return Math.min(100, Math.max(0, item.metadata.degradation));
+        }
+    }
+
+    // 3. Condición de armas (conditionlevel)
+    if (typeof item.conditionlevel === 'number' && item.conditionlevel > 0) {
+        return Math.min(100, Math.max(0, item.conditionlevel));
+    }
+
+    // 4. Porcentaje genérico estático solo si está deteriorado (< 100)
+    if (typeof item.percentage === 'number' && item.percentage >= 0 && item.percentage < 100) {
+        return Math.min(100, Math.max(0, item.percentage));
+    }
+
+    return null;
+};
+
+window.renderDurabilityInPanel = function(pct, customLabel) {
+    const $durPanel = $("#item-durability-panel");
+    if (!$durPanel.length) return;
+
+    if (pct === null || pct === undefined || isNaN(pct)) {
+        $durPanel.hide();
+        return;
+    }
+
+    const defaultLabel = (typeof LANGUAGE !== 'undefined' && LANGUAGE && (LANGUAGE.durability || LANGUAGE.labels?.durability)) ? (LANGUAGE.durability || LANGUAGE.labels?.durability) : "Durabilidad";
+    const labelText = customLabel || defaultLabel;
+    $durPanel.find('.durability-label').text(labelText.toUpperCase());
+
+    const activeCount = Math.max(0, Math.min(10, Math.round(pct / 10)));
+    let ticksHtml = '';
+    for (let i = 1; i <= 10; i++) {
+        const stateClass = (i <= activeCount) ? 'active' : 'consumed';
+        ticksHtml += `<div class="durability-tick ${stateClass}"></div>`;
+    }
+
+    $durPanel.find('.durability-bar').html(ticksHtml);
+    $durPanel.css('display', 'flex').show();
+};
+
+// Renderizar detalles del item (peso, serial, límite, cantidad) en el recuadro fijo debajo de los KG
+window.renderItemDetailsInPanel = function(item) {
+    const $detailsPanel = $("#item-details-panel");
+    if (!$detailsPanel.length) return;
+    $detailsPanel.empty();
+
+    if (!item) {
+        $detailsPanel.hide();
+        return;
+    }
+
+    const weightMeasure = (typeof Config !== 'undefined' && Config && Config.WeightMeasure) ? Config.WeightMeasure : "KG";
+    
+    // Labels traducidos con fallbacks limpios
+    const weightLabel = (typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.labels && LANGUAGE.labels.weight) 
+        ? LANGUAGE.labels.weight.trim() 
+        : "PESO";
+    
+    let serialLabel = (typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.labels && LANGUAGE.labels.serial) 
+        ? LANGUAGE.labels.serial.trim() 
+        : "SERIAL";
+    if (serialLabel.toLowerCase().includes("número") || serialLabel.toLowerCase().includes("numero")) {
+        serialLabel = "Nº SERIE";
+    }
+
+    const limitLabel = (typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.labels && LANGUAGE.labels.limit) 
+        ? LANGUAGE.labels.limit.trim() 
+        : "LÍMITE";
+
+    const countLabel = (typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.labels && LANGUAGE.labels.amount) 
+        ? LANGUAGE.labels.amount.trim().replace(':', '') 
+        : ((typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.prompttitle) ? LANGUAGE.prompttitle.trim() : "CANTIDAD");
+
+    let rowsHtml = '';
+
+    if (item.type === "item_weapon") {
+        // Armas: Peso, Cantidad (1) y Número de serie
+        const rawWeight = Number(item.weight) || 0;
+        const weightStr = rawWeight.toFixed(2) + " " + weightMeasure;
+        const count = item.count != null ? item.count : 1;
+
+        rowsHtml += `
+            <div class="item-detail-row item-detail-weight">
+                <span class="item-detail-label">${weightLabel.toUpperCase()}:</span>
+                <span class="item-detail-value">${weightStr}</span>
+            </div>
+            <div class="item-detail-row item-detail-count">
+                <span class="item-detail-label">${countLabel.toUpperCase()}:</span>
+                <span class="item-detail-value">${count}</span>
+            </div>
+        `;
+
+        if (item.serial_number && String(item.serial_number).trim() !== "") {
+            rowsHtml += `
+                <div class="item-detail-row item-detail-serial">
+                    <span class="item-detail-label">${serialLabel.toUpperCase()}:</span>
+                    <span class="item-detail-value">${String(item.serial_number).trim()}</span>
+                </div>
+            `;
+        }
+    } else if (item.type === "item_money") {
+        // Dinero: Mostrar peso y cantidad
+        const count = item.count != null ? item.count : 0;
+        const rawWeight = Number(item.weight) || 0;
+        if (rawWeight > 0) {
+            rowsHtml += `
+                <div class="item-detail-row item-detail-weight">
+                    <span class="item-detail-label">${weightLabel.toUpperCase()}:</span>
+                    <span class="item-detail-value">${rawWeight.toFixed(2)} ${weightMeasure}</span>
+                </div>
+            `;
+            rowsHtml += `
+                <div class="item-detail-row item-detail-count">
+                    <span class="item-detail-label">${countLabel.toUpperCase()}:</span>
+                    <span class="item-detail-value">${count}</span>
+                </div>
+            `;
+        } else {
+            rowsHtml += `
+                <div class="item-detail-row item-detail-count" style="grid-column: 1 / -1; justify-self: center;">
+                    <span class="item-detail-label">${countLabel.toUpperCase()}:</span>
+                    <span class="item-detail-value">${count}</span>
+                </div>
+            `;
+        }
+    } else {
+        // Items estándar
+        const { weight } = getItemMetadataInfo(item, false);
+        const count = item.count != null ? Number(item.count) : 1;
+        const totalWeight = (Number(weight) || 0) * count;
+        const weightStr = totalWeight.toFixed(2) + " " + weightMeasure;
+
+        // Fila 1 - Izquierda: Peso
+        rowsHtml += `
+            <div class="item-detail-row item-detail-weight">
+                <span class="item-detail-label">${weightLabel.toUpperCase()}:</span>
+                <span class="item-detail-value">${weightStr}</span>
+            </div>
+        `;
+
+        // Fila 1 - Derecha: Cantidad
+        rowsHtml += `
+            <div class="item-detail-row item-detail-count">
+                <span class="item-detail-label">${countLabel.toUpperCase()}:</span>
+                <span class="item-detail-value">${count}</span>
+            </div>
+        `;
+
+        // Fila 2 - Izquierda: Límite (si tiene límite configurado)
+        if (item.limit != null && Number(item.limit) > 0) {
+            rowsHtml += `
+                <div class="item-detail-row item-detail-limit">
+                    <span class="item-detail-label">${limitLabel.toUpperCase()}:</span>
+                    <span class="item-detail-value">${item.limit}</span>
+                </div>
+            `;
+        }
+
+        if (item.metadata && item.metadata.tooltip) {
+            rowsHtml += `
+                <div class="item-detail-row item-detail-custom">
+                    ${item.metadata.tooltip}
+                </div>
+            `;
+        }
+    }
+
+    if (rowsHtml.trim() !== '') {
+        $detailsPanel.html(rowsHtml);
+        $detailsPanel.css('display', 'grid').show();
+    } else {
+        $detailsPanel.hide();
+    }
+};
+
+window.clearItemPanel = function() {
+    if (window.clearPanelTimeout) {
+        clearTimeout(window.clearPanelTimeout);
+        window.clearPanelTimeout = null;
+    }
+    if (window.panelDurabilityInterval) {
+        clearInterval(window.panelDurabilityInterval);
+        window.panelDurabilityInterval = null;
+    }
+    window.currentPanelItem = null;
+    $("#inventoryElement .item, #secondInventoryElement .item").removeClass('panel-item-active');
+    $("#item-actions-panel").empty();
+    const $lateralPanel = $("#gunbelt-ammo-panel");
+    if ($lateralPanel.length) {
+        $lateralPanel.hide().find('#gunbelt-ammo-buttons').empty();
+    }
+    $("#item-durability-panel").hide();
+    $("#item-details-panel").empty().hide();
+    try {
+        if (typeof OverSetTitle === 'function') OverSetTitle(" ");
+        if (typeof OverSetDesc === 'function') OverSetDesc(" ");
+    } catch(e) {}
+};
+
+window.showItemInPanel = function($el) {
+    if (window.clearPanelTimeout) {
+        clearTimeout(window.clearPanelTimeout);
+        window.clearPanelTimeout = null;
+    }
+    if (!$el || !$el.length) return;
+    const item = $el.data('item');
+    if (!item) return;
+
+    $("#inventoryElement .item, #secondInventoryElement .item").removeClass('panel-item-active');
+    $el.addClass('panel-item-active');
+    window.currentPanelItem = $el;
+
+    if (item.type === "item_money") {
+        const count = item.count || 0;
+        OverSetTitle(item.label || "Dólares");
+        OverSetDesc(item.desc || ("Dinero en efectivo - $" + Number(count).toFixed(2)));
+    } else {
+        const { label, description } = getItemMetadataInfo(item);
+        OverSetTitle(label);
+        OverSetDesc(description);
+    }
+
+    // Renderizar detalles del item (peso, serial, límite) en el recuadro debajo de KG
+    window.renderItemDetailsInPanel(item);
+
+    if (window.panelDurabilityInterval) {
+        clearInterval(window.panelDurabilityInterval);
+        window.panelDurabilityInterval = null;
+    }
+
+    const isDecay = (item && Number(item.maxDegradation) > 0);
+    const durabilityLabel = isDecay
+        ? ((typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.labels && LANGUAGE.labels.decay) ? LANGUAGE.labels.decay.trim() : "DECADENCIA")
+        : ((typeof LANGUAGE !== 'undefined' && LANGUAGE && (LANGUAGE.durability || LANGUAGE.labels?.durability)) ? (LANGUAGE.durability || LANGUAGE.labels?.durability).trim() : "DURABILIDAD");
+
+    const durability = window.getItemDurability(item);
+    window.renderDurabilityInPanel(durability, durabilityLabel);
+
+    // Actualización en tiempo real cada 1 segundo si el item tiene degradación temporal
+    if (item && item.maxDegradation && Number(item.maxDegradation) > 0) {
+        window.panelDurabilityInterval = setInterval(() => {
+            if (!window.currentPanelItem || !window.currentPanelItem.length) {
+                clearInterval(window.panelDurabilityInterval);
+                window.panelDurabilityInterval = null;
+                return;
+            }
+            const currentItem = window.currentPanelItem.data('item');
+            if (!currentItem || !currentItem.maxDegradation || Number(currentItem.maxDegradation) <= 0) {
+                clearInterval(window.panelDurabilityInterval);
+                window.panelDurabilityInterval = null;
+                return;
+            }
+            const liveDurability = window.getItemDurability(currentItem);
+            window.renderDurabilityInPanel(liveDurability, durabilityLabel);
+        }, 1000);
+    }
+
+    if ($el.data('inventory') === 'second' || $el.closest('#secondInventoryElement').length) {
+        // En inventario secundario (caballo, cofre), no mostrar botones de acción directa del jugador
+        $("#item-actions-panel").empty();
+    } else {
+        window.renderItemActionsInPanel($el);
+    }
+};
+
+// Limpiar selección cuando el cursor sale de los ítems
+$(document).on('mouseleave', '#inventoryElement .item, #secondInventoryElement .item', function(e) {
+    if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel').length) {
+        return; // Moviéndose hacia el panel lateral de munición
+    }
+    const nextItem = e.relatedTarget ? $(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item') : null;
+    if (!nextItem || !nextItem.length || !nextItem.data('item')) {
+        if (window.clearPanelTimeout) clearTimeout(window.clearPanelTimeout);
+        window.clearPanelTimeout = setTimeout(function() {
+            if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length) {
+                window.clearItemPanel();
+            }
+        }, 50);
+    }
+});
+
+$(document).on('mouseleave', '#gunbelt-ammo-panel', function(e) {
+    if (e.relatedTarget && ($(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item').length || $(e.relatedTarget).closest('#inventoryBackground').length)) {
+        return; // Moviéndose de regreso al inventario
+    }
+    if (window.clearPanelTimeout) clearTimeout(window.clearPanelTimeout);
+    window.clearPanelTimeout = setTimeout(function() {
+        if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length) {
+            window.clearItemPanel();
+        }
+    }, 50);
+});
+
+$(document).on('mouseleave', '#inventoryElement, #secondInventoryElement', function(e) {
+    if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel, #inventoryElement .item, #secondInventoryElement .item').length) {
+        return;
+    }
+    if (window.clearPanelTimeout) clearTimeout(window.clearPanelTimeout);
+    window.clearPanelTimeout = setTimeout(function() {
+        if (!$("#inventoryElement .item:hover, #secondInventoryElement .item:hover").filter(function() { return !!$(this).data('item'); }).length && !$("#gunbelt-ammo-panel:hover").length) {
+            window.clearItemPanel();
+        }
+    }, 50);
+});
+
+$(document).on('click', function(e) {
+    if (!$(e.target).closest('#inventoryElement .item, #secondInventoryElement .item').length && !$(e.target).closest('#gunbelt-ammo-panel').length) {
+        window.clearItemPanel();
+    }
+});
+
+// Clic directo en botones del panel lateral de munición
+$(document).on('click', '.lateral-ammo-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const $btn = $(this);
+    $btn.addClass('btn-key-pressed');
+    setTimeout(() => $btn.removeClass('btn-key-pressed'), 180);
+    const actionFn = $btn.data('action');
+    if (typeof actionFn === 'function') {
+        actionFn();
+    }
+});
+
+// Atajos de teclado para ejecutar acciones con el cursor sobre un ítem
+$(document).on('keydown', function(e) {
+    // Si el usuario está escribiendo en el buscador o cualquier input, ignorar atajos
+    const tag = (e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '');
+    if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) {
+        return;
+    }
+
+    if (!window.currentPanelItem || !window.currentPanelItem.length) return;
+
+    const pressedKey = (e.key || '').toUpperCase();
+
+    // 1. Teclas del panel principal (E, G, X, C)
+    if (['E', 'G', 'X', 'C'].includes(pressedKey)) {
+        const $btn = $(`#item-actions-panel .panel-action-btn[data-key="${pressedKey}"]`);
+        if ($btn && $btn.length) {
+            e.preventDefault();
+            e.stopPropagation();
+            $btn.addClass('btn-key-pressed');
+            setTimeout(() => $btn.removeClass('btn-key-pressed'), 180);
+            const actionFn = $btn.data('action');
+            if (typeof actionFn === 'function' && window.currentPanelItem && window.currentPanelItem.length) {
+                actionFn.call(window.currentPanelItem[0]);
+            }
+        }
+        return;
+    }
+
+    // 2. Teclas del panel lateral de municiones adicionales (1..0, F, R, T, Y, V)
+    const lateralKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'F', 'R', 'T', 'Y', 'V'];
+    if (lateralKeys.includes(pressedKey) && $("#gunbelt-ammo-panel").is(":visible")) {
+        const $latBtn = $(`#gunbelt-ammo-buttons .lateral-ammo-btn[data-key="${pressedKey}"]`);
+        if ($latBtn && $latBtn.length) {
+            e.preventDefault();
+            e.stopPropagation();
+            $latBtn.addClass('btn-key-pressed');
+            setTimeout(() => $latBtn.removeClass('btn-key-pressed'), 180);
+            const actionFn = $latBtn.data('action');
+            if (typeof actionFn === 'function') {
+                actionFn();
+            }
+        }
+    }
+});
+
+$(document).on('contextmenu', '#inventoryElement .item, #secondInventoryElement .item', function(e) {
+    if ($(this).data('item')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.showItemInPanel($(this));
+    }
+});
+
+$(document).on('click', '#inventoryElement .item, #secondInventoryElement .item', function() {
+    if ($(this).data('item')) {
+        window.showItemInPanel($(this));
+    }
+});
+
 function moveInventory(inv) {
     const inventoryHud = document.getElementById('inventoryHud');
-    // Intentar aplicar posición guardada por jugador
+    
+    // HUD principal siempre en posición fija (no se mueve)
+    // Solo aplicar posición guardada si existe, sino usar CSS por defecto
     try {
         const key = (window.currentPlayerId !== undefined && window.currentPlayerId !== null) ? String(window.currentPlayerId) : 'default';
         const raw = localStorage.getItem(`hudPos:${key}`);
@@ -440,16 +1014,16 @@ function moveInventory(inv) {
             if (pos && typeof pos.left === 'number' && typeof pos.top === 'number') {
                 inventoryHud.style.left = `${pos.left}px`;
                 inventoryHud.style.top = `${pos.top}px`;
-                return; // Usar posición guardada
             }
         }
-    } catch(e) { /* fallback a comportamiento por defecto */ }
+        // Si no hay posición guardada, el CSS se encarga (left: 25%, top: 5%)
+    } catch(e) { 
+        // En caso de error, dejar que el CSS maneje la posición
+    }
 
-    // Comportamiento por defecto si no hay posición guardada
-    if (inv === 'main') {
-        inventoryHud.style.left = '25%';
-    } else if (inv === 'second') {
-        inventoryHud.style.left = '1%';
+    // Mover inventario secundario si es necesario
+    if (inv === 'second') {
+        // El inventario secundario sigue siendo movible
     }
 }
 
@@ -592,45 +1166,13 @@ function addData(index, item) {
         });
     }
 
-    // Add MOVE option to reorder items via click
-    try {
-        var moveLabel = (typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.move) ? LANGUAGE.move : 'MOVE';
-        data.push({
-            text: moveLabel,
-            action: function () {
-                window.startMoveMode($("#item-" + index));
-            }
-        });
-    } catch (e) {
-        data.push({
-            text: 'MOVE',
-            action: function () {
-                try { window.startMoveMode($("#item-" + index)); } catch (err) {}
-            }
-        });
-    }
-
-    if (data.length > 0) {
-        $("#item-" + index).contextMenu([data], {
-            offsetX: 1,
-            offsetY: 1,
-        });
-    }
+    $("#item-" + index).data("panelActions", data);
 
     const itemElement = document.getElementById(`item-${index}`);
 
     itemElement.addEventListener('mouseenter', () => {
-        const { label, description } = getItemMetadataInfo(item);
-        OverSetTitle(label);
-        OverSetDesc(description);
-
+        window.showItemInPanel($("#item-" + index));
     });
-
-    itemElement.addEventListener('mouseleave', () => {
-        OverSetTitle(" ");
-        OverSetDesc(" ");
-    });
-
 }
 
 function getItemDegradationPercentage(item) {
@@ -648,13 +1190,7 @@ function getItemDegradationPercentage(item) {
  * @returns {string}
  */
 function getDegradationMain(item) {
-
-    if (item.type === "item_weapon" || item.maxDegradation === 0 || item.degradation === undefined || item.degradation === null || TIME_NOW === undefined) return "";
-    const degradationPercentage = getItemDegradationPercentage(item);
-    const color = getColorForDegradation(degradationPercentage);
-
-    return `<br>${LANGUAGE.labels.decay}<span style="color: ${color}">${degradationPercentage.toFixed(0)}%</span>`;
-
+    return "";
 }
 
 /**
@@ -675,7 +1211,7 @@ function loadInventoryItems(item, index, group, count, limit) {
     const { tooltipContent, url } = getItemTooltipContent(image, groupKey, group, limit, itemWeight, degradation, tooltipData);
     const imageOpacity = getItemDegradationPercentage(item) === 0 ? 0.5 : 1;
 
-    $("#inventoryElement").append(`<div data-group='${group}' data-label='${label}' style='background-image: ${url}; background-size: 4.5vw 7.7vh; background-repeat: no-repeat; background-position: center; opacity: ${imageOpacity};' id='item-${index}' class='item' data-tooltip='${tooltipContent}'> 
+    $("#inventoryElement").append(`<div data-group='${group}' data-label='${label}' style='background-image: ${url}, url("img/slot.png"); background-size: 4.2vw 6.5vh, 100% 100%; background-repeat: no-repeat, no-repeat; background-position: center, center; opacity: ${imageOpacity};' id='item-${index}' class='item' data-tooltip='${tooltipContent}'> 
         <div class='count'>
             <span style='color:Black'>${count}</span>
         </div>
@@ -694,11 +1230,11 @@ function loadInventoryWeapons(item, index, group) {
     if (item.type != "item_weapon") return;
 
     const weight = getItemWeight(item.weight, 1);
-    const info = item.serial_number ? "<br>" + (LANGUAGE.labels?.ammo ?? "Ammo") + item.count + "<br>" + (LANGUAGE.labels?.serial ?? "Serial") + item.serial_number : "";
+    const info = item.serial_number ? "<br>" + (LANGUAGE.labels?.serial ?? "Serial: ") + item.serial_number : "";
     const url = imageCache[item.name] || `url("img/items/${item.name}.png")`
     const label = item.custom_label ? item.custom_label : item.label;
 
-    $("#inventoryElement").append(`<div data-label='${label}' data-group='${group}' style='background-image: ${url}; background-size: 4.5vw 7.7vh; background-repeat: no-repeat; background-position: center;' id='item-${index}' class='item' data-tooltip="${weight + info}">
+    $("#inventoryElement").append(`<div data-label='${label}' data-group='${group}' style='background-image: ${url}, url("img/slot.png"); background-size: 4.2vw 6.5vh, 100% 100%; background-repeat: no-repeat, no-repeat; background-position: center, center;' id='item-${index}' class='item' data-tooltip="${weight + info}">
         <div class='equipped-icon' style='display: ${!item.used && !item.used2 ? "none" : "block"};'></div>
     </div> `);
 }
@@ -713,353 +1249,15 @@ function loadInventoryWeapons(item, index, group) {
  */
 function mainInventoryFixedItems(label, description, item, data) {
     const url = imageCache[item] || `url("img/items/${item}.png")`;
-    $("#inventoryElement").append(`<div data-label='${label}' data-group='1' style='background-image: ${url}; background-size: 4.5vw 6.7vh; background-repeat: no-repeat; background-position: center;' id='item-${item}' class='item'></div>`);
+    const fixedGroup = (item === 'gunbelt') ? 6 : 1;
+    $("#inventoryElement").append(`<div data-label='${label}' data-group='${fixedGroup}' style='background-image: ${url}, url("img/slot.png"); background-size: 4.2vw 6.5vh, 100% 100%; background-repeat: no-repeat, no-repeat; background-position: center, center;' id='item-${item}' class='item'></div>`);
 
-    $("#item-" + item).contextMenu([data], {
-        offsetX: 1,
-        offsetY: 1,
-    });
+    $("#item-" + item).data("panelActions", data);
 
     const itemElement = document.getElementById(`item-${item}`);
     itemElement.addEventListener('mouseenter', () => {
-        OverSetTitle(label);
-        OverSetDesc(description);
+        window.showItemInPanel($("#item-" + item));
     });
-
-    itemElement.addEventListener('mouseleave', () => {
-        OverSetTitle(" ");
-        OverSetDesc(" ");
-    });
-}
-
-
-function inventorySetup(items) {
-
-
-    $("#inventoryElement").html("");
-    let divAmount = 0;
-
-    let slotCountRendered = 0;
-    try {
-        const itemsByKey = new Map();
-        for (const it of (Array.isArray(items) ? items : [])) {
-            const k = itemBaseKey(it);
-            if (!k) continue;
-            if (!itemsByKey.has(k)) itemsByKey.set(k, []);
-            itemsByKey.get(k).push(it);
-        }
-
-        const layout = Array.isArray(window.mainItemsLayout) ? window.mainItemsLayout : null;
-        const slotKeyByIndex = [];
-        const slotMetaByIndex = [];
-        const hasSlot = [];
-        if (layout && layout.length > 0) {
-            for (let i = 0; i < layout.length; i++) {
-                const entry = layout[i];
-                if (entry && typeof entry === 'object' && ('slot' in entry)) {
-                    const s = Number(entry.slot);
-                    if (!Number.isNaN(s) && s >= 0) {
-                        hasSlot[s] = true;
-                        const v = ('itemId' in entry) ? entry.itemId : (('id' in entry) ? entry.id : (('name' in entry) ? entry.name : null));
-                        slotKeyByIndex[s] = (v === undefined || v === null) ? null : String(v);
-                        slotMetaByIndex[s] = (entry.meta === undefined || entry.meta === null) ? null : String(entry.meta);
-                    }
-                } else {
-                    hasSlot[i] = true;
-                    slotKeyByIndex[i] = (entry === undefined || entry === null || entry === false) ? null : String(entry);
-                }
-            }
-        }
-
-        try {
-            const assigned = {};
-            const reserved = [];
-            for (let qs = 0; qs < 4; qs++) {
-                const entry = getQuickslotEntry(layout, qs);
-                if (!entry || entry.itemId === undefined || entry.itemId === null) continue;
-                const key = String(entry.itemId);
-                const list = itemsByKey.get(key);
-                if (!list || !list.length) continue;
-                let desiredMeta = (entry.meta === undefined || entry.meta === null) ? null : String(entry.meta).trim();
-                if (desiredMeta === '') desiredMeta = null;
-                let it = null;
-                if (desiredMeta) {
-                    for (let j = 0; j < list.length; j++) {
-                        if (itemMetaHash(list[j]) === desiredMeta) {
-                            it = list.splice(j, 1)[0];
-                            break;
-                        }
-                    }
-                }
-                if (!it) it = list.shift();
-                if (it) {
-                    assigned[String(qs)] = it;
-                    reserved.push(it);
-                }
-            }
-            window.quickslotAssignedItems = assigned;
-            window.__quickslotReservedItems = reserved;
-        } catch (e) {}
-
-        let maxSlot = -1;
-        for (let i = 0; i < hasSlot.length; i++) {
-            if (hasSlot[i]) maxSlot = i;
-        }
-        const slotCount = maxSlot >= 0 ? (maxSlot + 1) : 0;
-
-        const used = new Set();
-        try {
-            const reserved = Array.isArray(window.__quickslotReservedItems) ? window.__quickslotReservedItems : [];
-            for (const it of reserved) used.add(it);
-        } catch (e) {}
-        let domIndex = 0;
-        if (slotCount > 0) {
-            for (let s = 0; s < slotCount; s++) {
-                const key = hasSlot[s] ? slotKeyByIndex[s] : null;
-                if (key) {
-                    const list = itemsByKey.get(key);
-                    let it = null;
-                    if (list && list.length) {
-                        let desiredMeta = (hasSlot[s] && slotMetaByIndex[s] !== undefined && slotMetaByIndex[s] !== null)
-                            ? String(slotMetaByIndex[s]).trim()
-                            : null;
-                        if (desiredMeta === '') desiredMeta = null;
-                        if (desiredMeta) {
-                            for (let j = 0; j < list.length; j++) {
-                                if (itemMetaHash(list[j]) === desiredMeta) {
-                                    it = list.splice(j, 1)[0];
-                                    break;
-                                }
-                            }
-                        }
-                        if (!it) it = list.shift();
-                    }
-                    if (it) {
-                        const count = it.count;
-                        const limit = it.limit;
-                        const group = it.type != "item_weapon" ? !it.group ? 1 : it.group : 5;
-                        loadInventoryItems(it, domIndex, group, count, limit);
-                        loadInventoryWeapons(it, domIndex, group);
-                        addData(domIndex, it);
-                        used.add(it);
-                        divAmount++;
-                        domIndex++;
-                    } else {
-                        $("#inventoryElement").append(`<div class='item' data-group='0'></div>`);
-                    }
-                } else {
-                    $("#inventoryElement").append(`<div class='item' data-group='0'></div>`);
-                }
-                slotCountRendered++;
-            }
-        }
-
-        if (Array.isArray(items) && items.length > 0) {
-            for (const it of items) {
-                if (!it || used.has(it)) continue;
-                const count = it.count;
-                const limit = it.limit;
-                const group = it.type != "item_weapon" ? !it.group ? 1 : it.group : 5;
-                loadInventoryItems(it, domIndex, group, count, limit);
-                loadInventoryWeapons(it, domIndex, group);
-                addData(domIndex, it);
-                divAmount++;
-                domIndex++;
-                slotCountRendered++;
-            }
-        }
-    } catch(e) {
-        slotCountRendered = 0;
-        divAmount = 0;
-        if (items && items.length > 0) {
-            for (const [index, item] of items.entries()) {
-                if (item) {
-                    const count = item.count;
-                    const limit = item.limit;
-                    const group = item.type != "item_weapon" ? !item.group ? 1 : item.group : 5;
-                    loadInventoryItems(item, index, group, count, limit);
-                    loadInventoryWeapons(item, index, group);
-                    addData(index, item);
-                    divAmount++;
-                    slotCountRendered++;
-                }
-            }
-        }
-    }
-
-    const gunbelt_item = "gunbelt";
-    const gunbelt_label = LANGUAGE.gunbeltlabel;
-    const gunbelt_desc = LANGUAGE.gunbeltdescription;
-    var data = [];
-
-    let empty = true;
-    if (allplayerammo) {
-        for (const [ind, tab] of Object.entries(allplayerammo)) {
-            if (tab > 0) {
-                empty = false;
-                data.push({
-                    text: `${ammolabels[ind]} : ${tab}`,
-                    action: function () {
-                        giveammotoplayer(ind);
-                    },
-                });
-            }
-        }
-    }
-
-    if (empty) {
-        data.push({
-            text: LANGUAGE.empty,
-            action: function () { },
-        });
-    }
-
-    if (Config.AddAmmoItem) {
-        mainInventoryFixedItems(gunbelt_label, gunbelt_desc, gunbelt_item, data);
-        $("#item-" + gunbelt_item).data("item", gunbelt_item);
-        $("#item-" + gunbelt_item).data("inventory", "none");
-    } else {
-        $("#ammobox").contextMenu([data], {
-            offsetX: 1,
-            offsetY: 1,
-        });
-
-        $("#ammobox").hover(
-            function () {
-                $("#hint").show();
-                document.getElementById("hint").innerHTML = gunbelt_label;
-            },
-            function () {
-                $("#hint").hide();
-                document.getElementById("hint").innerHTML = "";
-            }
-        );
-    }
-
-    isOpen = true;
-    initDivMouseOver();
-    const m_item = "money";
-    const m_label = LANGUAGE.inventorymoneylabel;
-    const m_desc = LANGUAGE.inventorymoneydescription;
-
-    var data = [];
-
-    data.push({
-        text: LANGUAGE.givemoney,
-        action: function () {
-            giveGetHowManyMoney();
-        },
-    });
-
-    data.push({
-        text: LANGUAGE.dropmoney,
-        action: function () {
-            dropGetHowMany(m_item, "item_money", "asd", 0);
-        },
-    });
-
-    if (Config.AddDollarItem) {
-
-        mainInventoryFixedItems(m_label, m_desc, m_item, data);
-        $("#item-" + m_item).data("item", m_item);
-        $("#item-" + m_item).data("inventory", "none");
-    } else {
-        $("#cash").contextMenu([data], {
-            offsetX: 1,
-            offsetY: 1,
-        });
-
-        $("#cash").hover(
-            function () {
-                $("#money-value").hide();
-                $("#hint-money-value").show();
-                $("#hint-money-value").text(m_label);
-            },
-            function () {
-                $("#money-value").show();
-                $("#hint-money-value").hide();
-            }
-        );
-    }
-
-    isOpen = true;
-    initDivMouseOver();
-
-    if (Config.UseGoldItem) {
-        //AddGold
-        const g_item = "gold";
-        const g_label = LANGUAGE.inventorygoldlabel;
-        const g_desc = LANGUAGE.inventorygolddescription;
-
-        let data = [];
-
-        data.push({
-            text: LANGUAGE.givegold,
-            action: function () {
-                giveGetHowManyGold();
-            },
-        });
-
-        data.push({
-            text: LANGUAGE.dropgold,
-            action: function () {
-                dropGetHowMany(g_item, "item_gold", "asd", 0);
-            },
-        });
-
-        if (Config.AddGoldItem) {
-
-            mainInventoryFixedItems(g_label, g_desc, g_item, data);
-            $("#item-" + g_item).data("item", g_item);
-            $("#item-" + g_item).data("inventory", "none");
-        } else {
-            $("#gold").contextMenu([data], {
-                offsetX: 1,
-                offsetY: 1,
-            });
-
-            $("#gold").hover(
-                function () {
-                    $("#gold-value").hide();
-                    $("#hint-gold-value").show();
-                    $("#hint-gold-value").text(g_label);
-                },
-                function () {
-                    $("#gold-value").show();
-                    $("#hint-gold-value").hide();
-                }
-            );
-        }
-
-        isOpen = true;
-        initDivMouseOver();
-    }
-
-    if (slotCountRendered < 14) {
-        const emptySlots = 14 - slotCountRendered;
-        const $firstFixed = $("#inventoryElement .item[id^='item-']").filter(function () {
-            const id = this && this.id ? String(this.id) : "";
-            if (!id.startsWith("item-")) return false;
-            const suffix = id.slice(5);
-            return suffix && !/^\d+$/.test(suffix);
-        }).first();
-        for (let i = 0; i < emptySlots; i++) {
-            const $empty = $(`<div class='item' data-group='0'></div>`);
-            if ($firstFixed && $firstFixed.length) {
-                $empty.insertBefore($firstFixed);
-            } else {
-                $("#inventoryElement").append($empty);
-            }
-        }
-        slotCountRendered += emptySlots;
-    }
-
-    // Activar o desactivar reordenación según el modo actual
-    if (window.inventoryMoveEnabled) {
-        deactivateMainInventoryReorder();
-    } else {
-        activateMainInventoryReorder();
-    }
 }
 
 // --- Reordenación de inventario principal ---
@@ -1084,6 +1282,7 @@ function activateMainInventoryReorder() {
     $("#inventoryElement .item").droppable({
         accept: "#inventoryElement .item[data-inventory='main'], #quickslotHud .qs-slot.qs-draggable",
         tolerance: "pointer",
+        greedy: true,
         drop: function (_, ui) {
             const $source = $(ui.draggable);
             const $target = $(this);
@@ -1098,8 +1297,6 @@ function activateMainInventoryReorder() {
 
             const fromQuickslot = ($source && $source.length && $source.hasClass('qs-slot') && $source.closest('#quickslotHud').length > 0);
             if (fromQuickslot) {
-                const targetIsEmpty = ($target.data('inventory') !== 'none') && !$target.data('item');
-                if (!targetIsEmpty) return;
                 const qsIdx = Number($source.attr('data-index'));
                 try { moveQuickslotItemToMainSlot(qsIdx, $target); } catch (e) {}
                 return;
@@ -1118,6 +1315,24 @@ function activateMainInventoryReorder() {
             rebuildMainItemsCache();
         }
     });
+
+    // Permitir soltar directamente en el fondo del inventario o ventana principal
+    $("#inventoryElement, #inventoryHud").each(function () {
+        try { $(this).droppable("destroy"); } catch (e) {}
+    });
+    $("#inventoryElement, #inventoryHud").droppable({
+        accept: "#quickslotHud .qs-slot.qs-draggable",
+        tolerance: "pointer",
+        greedy: false,
+        drop: function (event, ui) {
+            const $source = $(ui.draggable);
+            const fromQuickslot = ($source && $source.length && $source.hasClass('qs-slot') && $source.closest('#quickslotHud').length > 0);
+            if (fromQuickslot) {
+                const qsIdx = Number($source.attr('data-index'));
+                try { moveQuickslotItemToMainSlot(qsIdx, null); } catch (e) {}
+            }
+        }
+    });
 }
 
 // --- Modo MOVE por menú contextual ---
@@ -1127,9 +1342,9 @@ function activateMainInventoryReorder() {
         const style = document.createElement('style');
         style.id = 'move-mode-styles';
         style.textContent = `
-            #inventoryElement .item.move-target{outline:2px dashed #00b7ff; box-shadow:0 0 0 2px rgba(0,183,255,.25) inset; cursor:pointer;}
-            #inventoryElement .item.move-source{outline:2px solid #00b7ff;}
-            #quickslotHud .qs-slot.move-target{outline:2px dashed #00b7ff; box-shadow:0 0 0 2px rgba(0,183,255,.25) inset; cursor:pointer;}
+            #inventoryElement .item.move-target{outline:2px dashed #DC143C; box-shadow:0 0 0 2px rgba(220,20,60,.25) inset; cursor:pointer;}
+            #inventoryElement .item.move-source{outline:2px solid #DC143C;}
+            #quickslotHud .qs-slot.move-target{outline:2px dashed #DC143C; box-shadow:0 0 0 2px rgba(220,20,60,.25) inset; cursor:pointer;}
             #quickslotHud.qs-interactive{pointer-events:auto;}
         `;
         document.head.appendChild(style);
@@ -1252,10 +1467,8 @@ function rebuildMainItemsCache() {
                 const itemId = (data.id !== undefined && data.id !== null && data.id !== 0) ? data.id : (data.name ?? null);
                 const meta = itemMetaHash(data);
                 layout.push({ slot: slotIndex, itemId: itemId, meta: meta });
-            } else {
-                layout.push({ slot: slotIndex, itemId: null });
+                slotIndex++;
             }
-            slotIndex++;
         });
         for (const e of preservedQuick) layout.push(e);
         window.mainItems = newOrder;
@@ -1400,43 +1613,12 @@ function addData(index, item) {
         });
     }
 
-    // Add MOVE option to reorder items via click
-    try {
-        var moveLabel = (typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.move) ? LANGUAGE.move : 'MOVE';
-        data.push({
-            text: moveLabel,
-            action: function () {
-                window.startMoveMode($("#item-" + index));
-            }
-        });
-    } catch (e) {
-        data.push({
-            text: 'MOVE',
-            action: function () {
-                try { window.startMoveMode($("#item-" + index)); } catch (err) {}
-            }
-        });
-    }
-
-    if (data.length > 0) {
-        $("#item-" + index).contextMenu([data], {
-            offsetX: 1,
-            offsetY: 1,
-        });
-    }
+    $("#item-" + index).data("panelActions", data);
 
     const itemElement = document.getElementById(`item-${index}`);
 
     itemElement.addEventListener('mouseenter', () => {
-        const { label, description } = getItemMetadataInfo(item);
-        OverSetTitle(label);
-        OverSetDesc(description);
-
-    });
-
-    itemElement.addEventListener('mouseleave', () => {
-        OverSetTitle(" ");
-        OverSetDesc(" ");
+        window.showItemInPanel($("#item-" + index));
     });
 }
 
@@ -1455,13 +1637,7 @@ function getItemDegradationPercentage(item) {
  * @returns {string}
  */
 function getDegradationMain(item) {
-
-    if (item.type === "item_weapon" || item.maxDegradation === 0 || item.degradation === undefined || item.degradation === null || TIME_NOW === undefined) return "";
-    const degradationPercentage = getItemDegradationPercentage(item);
-    const color = getColorForDegradation(degradationPercentage);
-
-    return `<br>${LANGUAGE.labels.decay}<span style="color: ${color}">${degradationPercentage.toFixed(0)}%</span>`;
-
+    return "";
 }
 
 /**
@@ -1482,7 +1658,7 @@ function loadInventoryItems(item, index, group, count, limit) {
     const { tooltipContent, url } = getItemTooltipContent(image, groupKey, group, limit, itemWeight, degradation, tooltipData);
     const imageOpacity = getItemDegradationPercentage(item) === 0 ? 0.5 : 1;
 
-    $("#inventoryElement").append(`<div data-group='${group}' data-label='${label}' style='background-image: ${url}; background-size: 4.5vw 7.7vh; background-repeat: no-repeat; background-position: center; opacity: ${imageOpacity};' id='item-${index}' class='item' data-tooltip='${tooltipContent}'> 
+    $("#inventoryElement").append(`<div data-group='${group}' data-label='${label}' style='background-image: ${url}, url("img/slot.png"); background-size: 4.2vw 6.5vh, 100% 100%; background-repeat: no-repeat, no-repeat; background-position: center, center; opacity: ${imageOpacity};' id='item-${index}' class='item' data-tooltip='${tooltipContent}'> 
         <div class='count'>
             <span style='color:Black'>${count}</span>
         </div>
@@ -1501,11 +1677,11 @@ function loadInventoryWeapons(item, index, group) {
     if (item.type != "item_weapon") return;
 
     const weight = getItemWeight(item.weight, 1);
-    const info = item.serial_number ? "<br>" + (LANGUAGE.labels?.ammo ?? "Ammo") + item.count + "<br>" + (LANGUAGE.labels?.serial ?? "Serial") + item.serial_number : "";
+    const info = item.serial_number ? "<br>" + (LANGUAGE.labels?.serial ?? "Serial: ") + item.serial_number : "";
     const url = imageCache[item.name] || `url("img/items/${item.name}.png")`
     const label = item.custom_label ? item.custom_label : item.label;
 
-    $("#inventoryElement").append(`<div data-label='${label}' data-group='${group}' style='background-image: ${url}; background-size: 4.5vw 7.7vh; background-repeat: no-repeat; background-position: center;' id='item-${index}' class='item' data-tooltip="${weight + info}">
+    $("#inventoryElement").append(`<div data-label='${label}' data-group='${group}' style='background-image: ${url}, url("img/slot.png"); background-size: 4.2vw 6.5vh, 100% 100%; background-repeat: no-repeat, no-repeat; background-position: center, center;' id='item-${index}' class='item' data-tooltip="${weight + info}">
         <div class='equipped-icon' style='display: ${!item.used && !item.used2 ? "none" : "block"};'></div>
     </div> `);
 }
@@ -1520,28 +1696,32 @@ function loadInventoryWeapons(item, index, group) {
  */
 function mainInventoryFixedItems(label, description, item, data) {
     const url = imageCache[item] || `url("img/items/${item}.png")`;
-    $("#inventoryElement").append(`<div data-label='${label}' data-group='1' style='background-image: ${url}; background-size: 4.5vw 6.7vh; background-repeat: no-repeat; background-position: center;' id='item-${item}' class='item'></div>`);
+    const fixedGroup = (item === 'gunbelt') ? 6 : 1;
+    $("#inventoryElement").append(`<div data-label='${label}' data-group='${fixedGroup}' style='background-image: ${url}, url("img/slot.png"); background-size: 4.2vw 6.5vh, 100% 100%; background-repeat: no-repeat, no-repeat; background-position: center, center;' id='item-${item}' class='item'></div>`);
 
-    $("#item-" + item).contextMenu([data], {
-        offsetX: 1,
-        offsetY: 1,
-    });
+    $("#item-" + item).data("panelActions", data);
 
     const itemElement = document.getElementById(`item-${item}`);
     itemElement.addEventListener('mouseenter', () => {
-        OverSetTitle(label);
-        OverSetDesc(description);
-    });
-
-    itemElement.addEventListener('mouseleave', () => {
-        OverSetTitle(" ");
-        OverSetDesc(" ");
+        window.showItemInPanel($("#item-" + item));
     });
 }
 
 
-function inventorySetup(items) {
+function getItemResolvedGroup(it) {
+    if (!it) return 1;
+    if (it.type === "item_weapon") return 5;
+    if (it.type === "item_ammo") return 6;
+    const name = (it.name || it.item || "").toString().toLowerCase();
+    if (name.startsWith("ammo")) return 6;
+    if (it.group !== undefined && it.group !== null && Number(it.group) > 0) return Number(it.group);
+    return 1;
+}
 
+function inventorySetup(items) {
+    if (typeof window.clearItemPanel === 'function') {
+        window.clearItemPanel();
+    }
 
     $("#inventoryElement").html("");
     let divAmount = 0;
@@ -1554,6 +1734,26 @@ function inventorySetup(items) {
             if (!k) continue;
             if (!itemsByKey.has(k)) itemsByKey.set(k, []);
             itemsByKey.get(k).push(it);
+        }
+
+        // Limpiar del layout cualquier slot de items que ya no existen en el inventario (movidos a caballos/cofres, etc.)
+        if (Array.isArray(window.mainItemsLayout)) {
+            const validKeys = new Set(itemsByKey.keys());
+            window.mainItemsLayout = window.mainItemsLayout.filter(entry => {
+                if (!entry || typeof entry !== 'object') return false;
+                const s = Number(entry.slot);
+                if (s < 0) return true; // preservar quickslots
+                const v = ('itemId' in entry) ? entry.itemId : (('id' in entry) ? entry.id : (('name' in entry) ? entry.name : null));
+                if (v === undefined || v === null) return false;
+                return validKeys.has(String(v));
+            });
+            let compactSlot = 0;
+            for (let i = 0; i < window.mainItemsLayout.length; i++) {
+                const e = window.mainItemsLayout[i];
+                if (e && Number(e.slot) >= 0) {
+                    e.slot = compactSlot++;
+                }
+            }
         }
 
         const layout = Array.isArray(window.mainItemsLayout) ? window.mainItemsLayout : null;
@@ -1581,7 +1781,7 @@ function inventorySetup(items) {
         try {
             const assigned = {};
             const reserved = [];
-            for (let qs = 0; qs < 4; qs++) {
+            for (let qs = 0; qs < 5; qs++) {
                 const entry = getQuickslotEntry(layout, qs);
                 if (!entry || entry.itemId === undefined || entry.itemId === null) continue;
                 const key = String(entry.itemId);
@@ -1610,7 +1810,7 @@ function inventorySetup(items) {
 
         let maxSlot = -1;
         for (let i = 0; i < hasSlot.length; i++) {
-            if (hasSlot[i]) maxSlot = i;
+            if (hasSlot[i] && slotKeyByIndex[i] !== null && slotKeyByIndex[i] !== undefined) maxSlot = i;
         }
         const slotCount = maxSlot >= 0 ? (maxSlot + 1) : 0;
 
@@ -1619,7 +1819,43 @@ function inventorySetup(items) {
             const reserved = Array.isArray(window.__quickslotReservedItems) ? window.__quickslotReservedItems : [];
             for (const it of reserved) used.add(it);
         } catch (e) {}
+        
+        // Recopilar items que NO están en el layout (items realmente nuevos)
+        const unusedItems = [];
+        if (Array.isArray(items) && items.length > 0) {
+            for (const it of items) {
+                if (!it || used.has(it)) continue;
+                
+                // Verificar si este item está en el layout
+                const k = itemBaseKey(it);
+                let inLayout = false;
+                if (k && layout && layout.length > 0) {
+                    for (let i = 0; i < layout.length; i++) {
+                        const entry = layout[i];
+                        let entryKey = null;
+                        if (entry && typeof entry === 'object' && ('slot' in entry)) {
+                            const v = ('itemId' in entry) ? entry.itemId : (('id' in entry) ? entry.id : (('name' in entry) ? entry.name : null));
+                            entryKey = (v === undefined || v === null) ? null : String(v);
+                        } else if (entry !== undefined && entry !== null && entry !== false) {
+                            entryKey = String(entry);
+                        }
+                        
+                        if (entryKey === k) {
+                            inLayout = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!inLayout) {
+                    unusedItems.push(it);
+                }
+            }
+        }
+        
         let domIndex = 0;
+        let unusedIndex = 0;
+        
         if (slotCount > 0) {
             for (let s = 0; s < slotCount; s++) {
                 const key = hasSlot[s] ? slotKeyByIndex[s] : null;
@@ -1644,36 +1880,60 @@ function inventorySetup(items) {
                     if (it) {
                         const count = it.count;
                         const limit = it.limit;
-                        const group = it.type != "item_weapon" ? !it.group ? 1 : it.group : 5;
+                        const group = getItemResolvedGroup(it);
                         loadInventoryItems(it, domIndex, group, count, limit);
                         loadInventoryWeapons(it, domIndex, group);
                         addData(domIndex, it);
-                        used.add(it);
+                        used.add(it); // CRITICAL: Mark as used to prevent duplication
                         divAmount++;
                         domIndex++;
-                    } else {
-                        $("#inventoryElement").append(`<div class='item' data-group='0'></div>`);
+                    } else if (unusedIndex < unusedItems.length) {
+                        // Slot en el layout de un item que ya no existe: colocar item nuevo si hay disponibles
+                        const newIt = unusedItems[unusedIndex];
+                        const count = newIt.count;
+                        const limit = newIt.limit;
+                        const group = getItemResolvedGroup(newIt);
+                        loadInventoryItems(newIt, domIndex, group, count, limit);
+                        loadInventoryWeapons(newIt, domIndex, group);
+                        addData(domIndex, newIt);
+                        used.add(newIt);
+                        divAmount++;
+                        domIndex++;
+                        unusedIndex++;
                     }
-                } else {
-                    $("#inventoryElement").append(`<div class='item' data-group='0'></div>`);
+                    // Si el item fue movido o eliminado y no hay item nuevo, NO se crea casilla vacía
+                } else if (unusedIndex < unusedItems.length) {
+                    const newIt = unusedItems[unusedIndex];
+                    const count = newIt.count;
+                    const limit = newIt.limit;
+                    const group = getItemResolvedGroup(newIt);
+                    loadInventoryItems(newIt, domIndex, group, count, limit);
+                    loadInventoryWeapons(newIt, domIndex, group);
+                    addData(domIndex, newIt);
+                    used.add(newIt);
+                    divAmount++;
+                    domIndex++;
+                    unusedIndex++;
                 }
+                // Si el slot está vacío y no hay item nuevo, NO se crea casilla vacía
                 slotCountRendered++;
             }
         }
 
-        if (Array.isArray(items) && items.length > 0) {
-            for (const it of items) {
-                if (!it || used.has(it)) continue;
-                const count = it.count;
-                const limit = it.limit;
-                const group = it.type != "item_weapon" ? !it.group ? 1 : it.group : 5;
-                loadInventoryItems(it, domIndex, group, count, limit);
-                loadInventoryWeapons(it, domIndex, group);
-                addData(domIndex, it);
-                divAmount++;
-                domIndex++;
-                slotCountRendered++;
-            }
+        // Añadir items restantes que no cupieron en el layout
+        while (unusedIndex < unusedItems.length) {
+            const newIt = unusedItems[unusedIndex];
+            const count = newIt.count;
+            const limit = newIt.limit;
+            const group = getItemResolvedGroup(newIt);
+            loadInventoryItems(newIt, domIndex, group, count, limit);
+            loadInventoryWeapons(newIt, domIndex, group);
+            addData(domIndex, newIt);
+            used.add(newIt);
+            divAmount++;
+            domIndex++;
+            slotCountRendered++;
+            unusedIndex++;
         }
     } catch(e) {
         slotCountRendered = 0;
@@ -1683,7 +1943,7 @@ function inventorySetup(items) {
                 if (item) {
                     const count = item.count;
                     const limit = item.limit;
-                    const group = item.type != "item_weapon" ? !item.group ? 1 : item.group : 5;
+                    const group = getItemResolvedGroup(item);
                     loadInventoryItems(item, index, group, count, limit);
                     loadInventoryWeapons(item, index, group);
                     addData(index, item);
@@ -1707,7 +1967,7 @@ function inventorySetup(items) {
                 data.push({
                     text: `${ammolabels[ind]} : ${tab}`,
                     action: function () {
-                        giveammotoplayer(ind);
+                        giveammotoplayer(ind, tab);
                     },
                 });
             }
@@ -1765,12 +2025,15 @@ function inventorySetup(items) {
         },
     });
 
-    if (Config.AddDollarItem) {
+    
 
-        mainInventoryFixedItems(m_label, m_desc, m_item, data);
-        $("#item-" + m_item).data("item", m_item);
-        $("#item-" + m_item).data("inventory", "none");
-    } else {
+    // COMENTADO: Item fijo de cash ocultado porque ahora el dinero es un item del inventario
+    // if (Config.AddDollarItem) {
+    //     mainInventoryFixedItems(m_label, m_desc, m_item, data);
+    //     $("#item-" + m_item).data("item", m_item);
+    //     $("#item-" + m_item).data("inventory", "none");
+    // } else {
+    if (true) { // Siempre usar el comportamiento del else (sin item fijo)
         $("#cash").contextMenu([data], {
             offsetX: 1,
             offsetY: 1,
@@ -1814,12 +2077,13 @@ function inventorySetup(items) {
             },
         });
 
-        if (Config.AddGoldItem) {
-
-            mainInventoryFixedItems(g_label, g_desc, g_item, data);
-            $("#item-" + g_item).data("item", g_item);
-            $("#item-" + g_item).data("inventory", "none");
-        } else {
+        // COMENTADO: Item fijo de gold ocultado porque ahora el oro es un item del inventario
+        // if (Config.AddGoldItem) {
+        //     mainInventoryFixedItems(g_label, g_desc, g_item, data);
+        //     $("#item-" + g_item).data("item", g_item);
+        //     $("#item-" + g_item).data("inventory", "none");
+        // } else {
+        if (true) { // Siempre usar el comportamiento del else (sin item fijo)
             $("#gold").contextMenu([data], {
                 offsetX: 1,
                 offsetY: 1,
@@ -1842,31 +2106,26 @@ function inventorySetup(items) {
         initDivMouseOver();
     }
 
-    if (slotCountRendered < 14) {
-        const emptySlots = 14 - slotCountRendered;
-        const $firstFixed = $("#inventoryElement .item[id^='item-']").filter(function () {
-            const id = this && this.id ? String(this.id) : "";
-            if (!id.startsWith("item-")) return false;
-            const suffix = id.slice(5);
-            return suffix && !/^\d+$/.test(suffix);
-        }).first();
-        for (let i = 0; i < emptySlots; i++) {
-            const $empty = $(`<div class='item' data-group='0'></div>`);
-            if ($firstFixed && $firstFixed.length) {
-                $empty.insertBefore($firstFixed);
-            } else {
-                $("#inventoryElement").append($empty);
-            }
-        }
-        slotCountRendered += emptySlots;
-    }
-
     // Activar o desactivar reordenación según el modo actual
     if (window.inventoryMoveEnabled) {
         deactivateMainInventoryReorder();
     } else {
         activateMainInventoryReorder();
     }
+
+    // Actualizar cache y persistencia de layout limpio (eliminando items transferidos o inexistentes)
+    try {
+        rebuildMainItemsCache();
+    } catch (e) {}
+
+    // Re-aplicar filtro de la categoría activa actual
+    try {
+        const cat = window.currentActiveCategory || 'all';
+        const actionsMap = window.Actions || DEFAULT_ACTIONS_CONFIG;
+        if (actionsMap && actionsMap[cat]) {
+            showItemsByType(actionsMap[cat].types, 'inventoryElement');
+        }
+    } catch (e) {}
 }
 
 
@@ -1889,6 +2148,7 @@ function activateMainInventoryReorder() {
         $("#inventoryElement .item").droppable({
             accept: "#inventoryElement .item[data-inventory='main'], #quickslotHud .qs-slot.qs-draggable",
             tolerance: "pointer",
+            greedy: true,
             drop: function (_, ui) {
                 const $source = $(ui.draggable);
                 const $target = $(this);
@@ -1917,6 +2177,24 @@ function activateMainInventoryReorder() {
                 }
 
                 rebuildMainItemsCache();
+            }
+        });
+
+        // Permitir soltar directamente en el fondo del inventario o ventana principal
+        $("#inventoryElement, #inventoryHud").each(function () {
+            try { $(this).droppable("destroy"); } catch (e) {}
+        });
+        $("#inventoryElement, #inventoryHud").droppable({
+            accept: "#quickslotHud .qs-slot.qs-draggable",
+            tolerance: "pointer",
+            greedy: false,
+            drop: function (event, ui) {
+                const $source = $(ui.draggable);
+                const fromQuickslot = ($source && $source.length && $source.hasClass('qs-slot') && $source.closest('#quickslotHud').length > 0);
+                if (fromQuickslot) {
+                    const qsIdx = Number($source.attr('data-index'));
+                    try { moveQuickslotItemToMainSlot(qsIdx, null); } catch (e) {}
+                }
             }
         });
     }
@@ -1958,10 +2236,8 @@ function rebuildMainItemsCache() {
                 const itemId = (data.id !== undefined && data.id !== null && data.id !== 0) ? data.id : (data.name ?? null);
                 const meta = itemMetaHash(data);
                 layout.push({ slot: slotIndex, itemId: itemId, meta: meta });
-            } else {
-                layout.push({ slot: slotIndex, itemId: null });
+                slotIndex++;
             }
-            slotIndex++;
         });
         for (const e of preservedQuick) layout.push(e);
         window.mainItems = newOrder;
@@ -2084,13 +2360,15 @@ function useQuickslotIndex(idx) {
 function updateQuickslotHudFromMain() {
     try {
         const slots = document.querySelectorAll('#quickslotHud .qs-slot');
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 5; i++) {
             const el = slots[i];
             if (!el) continue;
             const entry = getQuickslotEntry(window.mainItemsLayout, i);
             const assigned = window.quickslotAssignedItems || {};
             const item = assigned[String(i)] || findItemForQuickslotEntry(entry);
             const countEl = el.querySelector('.qs-count');
+            const itemImageEl = el.querySelector('.qs-item-image'); // Get the item image element
+            
             if (item) {
                 try { $(el).data('qsItem', item); } catch (e) {}
                 let raw = null;
@@ -2117,14 +2395,18 @@ function updateQuickslotHudFromMain() {
                 else if (hasExt) url = `url("${/[\\/]/.test(key) ? key : `img/items/${key}`}")`;
                 else if (isPathLike) url = `url("${key}")`;
                 else url = imageCache[key] || `url("img/items/${key}.png")`;
-                el.style.backgroundImage = url;
-                if (countEl) countEl.textContent = (item.count != null ? item.count : '');
+                
+                // Set image on the item image element, not the slot
+                if (itemImageEl) itemImageEl.style.backgroundImage = url;
+                if (countEl) countEl.textContent = '';
             } else {
-                el.style.backgroundImage = 'none';
+                // Clear item image when no item
+                if (itemImageEl) itemImageEl.style.backgroundImage = 'none';
                 if (countEl) countEl.textContent = '';
                 try { $(el).removeData('qsItem'); } catch (e) {}
             }
         }
+        try { initQuickslotHudDrag(); } catch (eDrag) {}
     } catch (e) { /* noop */ }
 }
 
@@ -2133,23 +2415,40 @@ function setQuickslotHudVisible(visible) {
     const hud = document.getElementById('quickslotHud');
     if (!hud) return;
     window.quickslotHudVisible = !!visible;
+    
+    // Cancelar cualquier timeout pendiente de animación anterior
+    if (window.quickslotAnimTimeout) {
+        clearTimeout(window.quickslotAnimTimeout);
+        window.quickslotAnimTimeout = null;
+    }
+    
     if (window.quickslotHudVisible) {
         hud.style.display = 'grid';
         try {
-            hud.classList.remove('qs-animate-enter');
+            hud.classList.remove('qs-animate-enter', 'qs-animate-exit');
             void hud.offsetWidth; // reflow para reiniciar animación
             hud.classList.add('qs-animate-enter');
-            const onEnd = (e) => {
-                if (e && e.target === hud) {
-                    hud.classList.remove('qs-animate-enter');
-                    hud.removeEventListener('animationend', onEnd);
-                }
-            };
-            hud.addEventListener('animationend', onEnd);
+            
+            // No remover la clase hasta que terminen TODAS las animaciones de los slots
+            // La animación más larga es del último slot: delay 1.2s + duration 1.2s = 2.4s
+            window.quickslotAnimTimeout = setTimeout(() => {
+                hud.classList.remove('qs-animate-enter');
+                window.quickslotAnimTimeout = null;
+            }, 2500); // 2.5s para asegurar que todas las animaciones terminen
         } catch (e) { /* noop */ }
         updateQuickslotHudFromMain();
     } else {
-        hud.style.display = 'none';
+        // Animación de salida antes de ocultar
+        hud.classList.remove('qs-animate-enter');
+        hud.classList.add('qs-animate-exit');
+        
+        // Esperar a que termine la animación de salida completa
+        // Slots terminan en 2.4s, luego background empieza y dura 0.3s = 2.7s total
+        window.quickslotAnimTimeout = setTimeout(() => {
+            hud.style.display = 'none';
+            hud.classList.remove('qs-animate-exit');
+            window.quickslotAnimTimeout = null;
+        }, 2800); // 2.8s para asegurar que todo termine
     }
 }
 
@@ -2169,10 +2468,10 @@ function ensureMoveModeStyles() {
         const style = document.createElement('style');
         style.id = 'move-mode-styles';
         style.textContent = `
-            #inventoryElement .item.move-target{outline:2px dashed #00b7ff; box-shadow:0 0 0 2px rgba(0,183,255,.25) inset; cursor:pointer;}
-            #inventoryElement .item.move-source{outline:2px solid #00b7ff;}
-            #quickslotHud .qs-slot.move-target{outline:2px dashed #00b7ff; box-shadow:0 0 0 2px rgba(0,183,255,.25) inset; cursor:pointer;}
-            #quickslotHud .qs-slot.move-source{outline:2px solid #00b7ff;}
+            #inventoryElement .item.move-target{outline:2px dashed #DC143C; box-shadow:0 0 0 2px rgba(220,20,60,.25) inset; cursor:pointer;}
+            #inventoryElement .item.move-source{outline:2px solid #DC143C;}
+            #quickslotHud .qs-slot.move-target{outline:2px dashed #DC143C; box-shadow:0 0 0 2px rgba(220,20,60,.25) inset; cursor:pointer;}
+            #quickslotHud .qs-slot.move-source{outline:2px solid #DC143C;}
             #quickslotHud.qs-interactive{pointer-events:auto;}
         `;
         document.head.appendChild(style);
@@ -2254,7 +2553,7 @@ function startQuickslotMoveToInventory(slotIndex) {
         cancelQuickslotMoveMode();
 
         const idx = Number(slotIndex);
-        if (Number.isNaN(idx) || idx < 0 || idx > 3) return;
+        if (Number.isNaN(idx) || idx < 0 || idx > 4) return;
         const entry = getQuickslotEntry(window.mainItemsLayout, idx);
         const assigned = window.quickslotAssignedItems || {};
         const item = assigned[String(idx)] || findItemForQuickslotEntry(entry);
@@ -2271,8 +2570,7 @@ function startQuickslotMoveToInventory(slotIndex) {
             const $t = $(this);
             const inv = $t.data('inventory');
             if (inv === 'none') return;
-            const hasItem = !!$t.data('item');
-            if (!hasItem) $t.addClass('move-target');
+            $t.addClass('move-target');
         });
     } catch (e) {}
 }
@@ -2311,7 +2609,7 @@ function renderItemIntoExistingMainSlot($slot, item) {
         const group = item.type !== "item_weapon" ? (!item.group ? 1 : item.group) : 5;
         if (item.type === "item_weapon") {
             const weight = getItemWeight(item.weight, 1);
-            const info = item.serial_number ? "<br>" + (LANGUAGE.labels?.ammo ?? "Ammo") + item.count + "<br>" + (LANGUAGE.labels?.serial ?? "Serial") + item.serial_number : "";
+            const info = item.serial_number ? "<br>" + (LANGUAGE.labels?.serial ?? "Serial: ") + item.serial_number : "";
             const url = imageCache[item.name] || `url("img/items/${item.name}.png")`;
             const label = item.custom_label ? item.custom_label : item.label;
             $slot.attr('data-label', label);
@@ -2353,14 +2651,8 @@ function renderItemIntoExistingMainSlot($slot, item) {
 function moveQuickslotItemToMainSlot(slotIndex0to3, $target) {
     try {
         if (!isMainInventoryActuallyOpen()) return;
-        if (!isMainInventoryFixedMode()) return;
         const qsIdx = Number(slotIndex0to3);
-        if (Number.isNaN(qsIdx) || qsIdx < 0 || qsIdx > 3) return;
-        if (!$target || !$target.length) return;
-        if ($target.data('inventory') === 'none') return;
-        if ($target.data('item')) return;
-        const slotIndex = $("#inventoryElement .item").index($target[0]);
-        if (slotIndex < 0) return;
+        if (Number.isNaN(qsIdx) || qsIdx < 0 || qsIdx > 4) return;
 
         let item = null;
         try {
@@ -2374,26 +2666,66 @@ function moveQuickslotItemToMainSlot(slotIndex0to3, $target) {
         }
         if (!item) return;
 
+        // Liberar slot de quickslot en layout y cache asignado
         window.mainItemsLayout = upsertQuickslotEntry(window.mainItemsLayout, qsIdx, null);
-        window.mainItemsLayout = upsertMainSlotEntry(window.mainItemsLayout, slotIndex, item);
         try {
             const assigned = window.quickslotAssignedItems || {};
             delete assigned[String(qsIdx)];
             window.quickslotAssignedItems = assigned;
         } catch (e) {}
 
-        renderItemIntoExistingMainSlot($target, item);
-        try {
-            if (typeof activateMainInventoryReorder === 'function') {
-                setTimeout(function () { try { activateMainInventoryReorder(); } catch (e) {} }, 0);
+        // Determinar índice objetivo si se soltó sobre un slot específico del inventario
+        let targetSlotIndex = -1;
+        if ($target && $target.length && $target.hasClass('item') && $target.closest('#inventoryElement').length) {
+            targetSlotIndex = $("#inventoryElement .item").index($target[0]);
+        }
+
+        if (targetSlotIndex >= 0) {
+            // Desplazar slots hacia la derecha para insertar en la posición exacta
+            if (Array.isArray(window.mainItemsLayout)) {
+                for (let i = 0; i < window.mainItemsLayout.length; i++) {
+                    const e = window.mainItemsLayout[i];
+                    if (e && typeof e === 'object' && ('slot' in e)) {
+                        const s = Number(e.slot);
+                        if (!Number.isNaN(s) && s >= targetSlotIndex) {
+                            e.slot = s + 1;
+                        }
+                    }
+                }
             }
-        } catch (e) {}
+            window.mainItemsLayout = upsertMainSlotEntry(window.mainItemsLayout, targetSlotIndex, item);
+        } else {
+            // Si se soltó en espacio vacío del inventario, colocar al final del layout
+            let maxSlot = -1;
+            if (Array.isArray(window.mainItemsLayout)) {
+                for (const e of window.mainItemsLayout) {
+                    if (e && typeof e === 'object' && ('slot' in e)) {
+                        const s = Number(e.slot);
+                        if (!Number.isNaN(s) && s > maxSlot) maxSlot = s;
+                    }
+                }
+            }
+            const nextSlot = maxSlot >= 0 ? maxSlot + 1 : 0;
+            window.mainItemsLayout = upsertMainSlotEntry(window.mainItemsLayout, nextSlot, item);
+        }
+
+        // Persistir layout en servidor
+        postSaveInventoryLayout(window.mainItemsLayout);
+
+        // Reconstruir lista completa y refrescar inventario principal visualmente
+        const full = buildItemsForInventorySetup([item]);
+        window.mainItems = full;
+        inventorySetup(full);
+
+        // Limpiar estados de movimiento y refrescar HUD de quickslots
         try { $("#quickslotHud .qs-slot").removeClass('move-source'); } catch (e) {}
         cancelQuickslotMoveMode();
-        try { rebuildMainItemsCache(); } catch (e2) {}
-        try { updateQuickslotHudFromMain(); } catch (e3) {}
-        try { initQuickslotHudDrag(); } catch (e4) {}
-    } catch (e) {}
+        try { updateQuickslotHudFromMain(); } catch (e2) {}
+        try { initQuickslotHudDrag(); } catch (e3) {}
+        try { initQuickslotHudDrop(); } catch (e4) {}
+    } catch (e) {
+        console.error('[VORP Inventory] Error in moveQuickslotItemToMainSlot:', e);
+    }
 }
 
 $(document).on('click', '#inventoryElement .item', function (ev) {
@@ -2492,7 +2824,7 @@ function postSaveInventoryLayout(layout) {
 function moveQuickslotToInventory(slotIndex) {
     try {
         const idx = Number(slotIndex);
-        if (Number.isNaN(idx) || idx < 0 || idx > 3) return;
+        if (Number.isNaN(idx) || idx < 0 || idx > 4) return;
         if (!isMainInventoryActuallyOpen()) return;
         if (!isMainInventoryFixedMode()) return;
         const entry = getQuickslotEntry(window.mainItemsLayout, idx);
@@ -2529,7 +2861,7 @@ function bindQuickslotHudContextMenu(forceRebind) {
             $slot.contextMenu([[{
                 text: (typeof LANGUAGE !== 'undefined' && LANGUAGE && LANGUAGE.movetoinventory) ? LANGUAGE.movetoinventory : 'Mover al inventario',
                 action: function () {
-                    startQuickslotMoveToInventory(slotIdx);
+                    moveQuickslotToInventory(slotIdx);
                 }
             }]], { offsetX: 1, offsetY: 1 });
         });
@@ -2548,7 +2880,7 @@ function initQuickslotHudDrop() {
             accept: "#inventoryElement .item[data-inventory='main']",
             tolerance: "pointer",
             over: function () {
-                try { this.style.outline = '2px dashed #00b7ff'; } catch (e) {}
+                try { this.style.outline = '2px dashed #DC143C'; } catch (e) {}
             },
             out: function () {
                 try { this.style.outline = ''; } catch (e) {}
@@ -2563,16 +2895,40 @@ function initQuickslotHudDrop() {
                 if ($source.data('inventory') !== 'main') return;
                 const item = $source.data('item');
                 if (!item) return;
+                
+                // Actualizar el layout y asignar el item al quickslot
                 window.mainItemsLayout = upsertQuickslotEntry(window.mainItemsLayout, slotIndex, item);
                 try {
                     window.quickslotAssignedItems = window.quickslotAssignedItems || {};
                     window.quickslotAssignedItems[String(slotIndex)] = item;
                 } catch (e) {}
+                
+                // Limpiar el slot del inventario principal
                 clearMainSlotEl($source);
+                
+                // Reconstruir el caché de items
                 rebuildMainItemsCache();
+                
+                // Reconstruir window.mainItems desde el layout actualizado
+                try {
+                    const rebuilt = buildItemsForInventorySetup([]);
+                    window.mainItems = rebuilt;
+                } catch (e) {}
+                
+                // Actualizar el inventario principal visualmente
+                try {
+                    if (typeof window.mainItems !== 'undefined' && Array.isArray(window.mainItems)) {
+                        inventorySetup(window.mainItems);
+                    }
+                } catch (e) {}
+                
+                // Actualizar el quickslot HUD inmediatamente
+                try {
+                    updateQuickslotHudFromMain();
+                } catch (e) {}
+                
                 try {
                     setTimeout(function () {
-                        try { updateQuickslotHudFromMain(); } catch (e) {}
                         try { initQuickslotHudDrag(); } catch (e) {}
                     }, 0);
                 } catch (e) {}
@@ -2591,7 +2947,6 @@ function initQuickslotHudDrag() {
             try { $(this).removeClass('qs-draggable'); } catch (e) {}
         });
         if (!isMainInventoryActuallyOpen()) return;
-        if (!isMainInventoryFixedMode()) return;
         ensureMoveModeStyles();
         $slots.each(function () {
             const $s = $(this);
@@ -2602,7 +2957,9 @@ function initQuickslotHudDrag() {
                 helper: function () {
                     try {
                         const $orig = $(this);
-                        const bg = $orig.css('background-image');
+                        // Get the item image from .qs-item-image instead of slot background
+                        const $itemImage = $orig.find('.qs-item-image');
+                        const bg = $itemImage.length ? $itemImage.css('background-image') : 'none';
                         const w = $orig.outerWidth();
                         const h = $orig.outerHeight();
                         const countText = ($orig.find('.qs-count').text() || '').trim();
@@ -2655,17 +3012,16 @@ try { initQuickslotHudDrag(); } catch (e) {}
 window.addEventListener('message', function (event) {
     const data = event && event.data || {};
     if (data.action === 'display' || data.action === 'show') {
-        setQuickslotHudInteractive(isMainInventoryFixedMode());
+        setQuickslotHudInteractive(true);
         try {
-            if (isMainInventoryFixedMode()) {
-                bindQuickslotHudContextMenu(true);
-                initQuickslotHudDrop();
-                initQuickslotHudDrag();
-            }
+            bindQuickslotHudContextMenu(true);
+            initQuickslotHudDrop();
+            initQuickslotHudDrag();
         } catch (e) {}
         return;
     }
     if (data.action === 'hide') {
+        $("#craftingMenu").fadeOut();
         setQuickslotHudInteractive(false);
         try {
             cancelQuickslotMoveMode();
@@ -2675,17 +3031,23 @@ window.addEventListener('message', function (event) {
         } catch (e) {}
         return;
     }
+    if (data.action === 'executeJS') {
+        // Execute arbitrary JavaScript code sent from Lua
+        try {
+            if (data.js && typeof data.js === 'string') {
+                eval(data.js);
+            }
+        } catch (e) {
+            console.error('[VORP Inventory] Error executing JS:', e);
+        }
+        return;
+    }
     if (data.action === 'setItems') {
         try {
-            if (isMainInventoryActuallyOpen() && isMainInventoryFixedMode()) {
-                setQuickslotHudInteractive(true);
-                bindQuickslotHudContextMenu(true);
-                initQuickslotHudDrop();
-                initQuickslotHudDrag();
-            } else {
-                setQuickslotHudInteractive(false);
-                initQuickslotHudDrag();
-            }
+            setQuickslotHudInteractive(true);
+            bindQuickslotHudContextMenu(true);
+            initQuickslotHudDrop();
+            initQuickslotHudDrag();
         } catch (e) {}
         return;
     }
@@ -2696,10 +3058,22 @@ window.addEventListener('message', function (event) {
         return;
     }
     if (data.action === 'toggleQuickslotHud') {
+        // No permitir cerrar el quickslot si el inventario principal está visualmente abierto
+        const $invHud = $("#inventoryHud");
+        if (window.quickslotHudVisible && $invHud.length && $invHud.is(":visible")) {
+            // Inventario visualmente abierto, no permitir cerrar quickslot
+            return;
+        }
         setQuickslotHudVisible(!window.quickslotHudVisible);
         return;
     }
     if (data.action === 'setQuickslotHud') {
+        // No permitir cerrar el quickslot si el inventario principal está visualmente abierto
+        const $invHud = $("#inventoryHud");
+        if (!data.visible && $invHud.length && $invHud.is(":visible")) {
+            // Inventario visualmente abierto, no permitir cerrar quickslot
+            return;
+        }
         setQuickslotHudVisible(!!data.visible);
         return;
     }
@@ -2755,3 +3129,66 @@ try {
         }, 1000);
     }
 } catch (e) { /* noop */ }
+
+/* Crafting Logic */
+let craftingRecipes = [];
+
+function toggleCraftingMenu() {
+    const menu = $("#craftingMenu");
+    if (menu.is(":visible")) {
+        menu.fadeOut(200);
+    } else {
+        menu.fadeIn(200);
+        renderCraftingList();
+    }
+}
+
+function renderCraftingList() {
+    const list = $("#craftingList");
+    list.empty();
+    
+    craftingRecipes.forEach((recipe) => {
+        let matsHtml = "";
+        recipe.materials.forEach(mat => {
+            matsHtml += `<div class="recipe-material">${mat.count}x ${mat.label}</div>`;
+        });
+        
+        const html = `
+            <div class="crafting-recipe">
+                <div class="recipe-header">
+                    <div class="recipe-info">
+                        <div class="recipe-img" style="background-image: url(${recipe.image});"></div>
+                        <div class="recipe-name">${recipe.label} (${recipe.craftAmount}x)</div>
+                    </div>
+                    <button class="recipe-btn" onclick="craftItem('${recipe.id}', ${recipe.craftTime})">CRAFTEAR</button>
+                </div>
+                <div class="recipe-materials">
+                    ${matsHtml}
+                </div>
+            </div>
+        `;
+        list.append(html);
+    });
+}
+
+function craftItem(recipeId, time) {
+    // UI Feedback
+    $("#crafting-transaction-loader").show();
+    setTimeout(() => {
+        $("#crafting-transaction-loader").hide();
+    }, time);
+    
+    $.post("https://vorp_inventory/CraftItem", JSON.stringify({
+        recipe: recipeId,
+        time: time
+    }));
+}
+
+window.addEventListener('message', function (event) {
+    const data = event.data;
+    if (data.action === "setCraftingRecipes") {
+        craftingRecipes = data.recipes;
+    } else if (data.action === "close") {
+        $("#craftingMenu").hide();
+    }
+});

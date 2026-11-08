@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Inventory Preview — VORP</title>
+    <link rel="stylesheet" href="css/contextMenu.min.css">
+    <link rel="stylesheet" href="css/jquery.dialog.min.css">
+    <link rel="stylesheet" href="css/ui.min.css">
+    <link rel="stylesheet" href="css/quickslots.css">
+    <style>
+        /* ── PREVIEW OVERRIDES ─────────────────────────────────────── */
+        body {
+            background: #1a1612;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* Forzar visibilidad del inventario principal */
+        #inventoryHud,
+        #disabler {
+            z-index: 1 !important;
+        }
+
+        /* Badge de modo preview */
+        #preview-badge {
+            position: fixed;
+            bottom: 1vh;
+            right: 1vw;
+            background: rgba(220, 20, 60, 0.85);
+            color: #fff;
+            font-family: monospace;
+            font-size: 1.1vh;
+            padding: 0.4vh 1vw;
+            border-radius: 0.4vh;
+            z-index: 99999;
+            pointer-events: none;
+            letter-spacing: 0.05em;
+        }
+
+        /* Panel de controles */
+        #preview-controls {
+            position: fixed;
+            top: 1vh;
+            right: 1vw;
+            display: flex;
+            gap: 0.5vw;
+            z-index: 99999;
+        }
+
+        #preview-controls button {
+            font-family: monospace;
+            font-size: 1.2vh;
+            padding: 0.5vh 0.8vw;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 0.4vh;
+            cursor: pointer;
+            float: none;
+        }
+
+        #preview-controls button:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ── CONTROLES DE PREVIEW ─────────────────────────────────────────── -->
+    <div id="preview-controls">
+        <button onclick="toggleSecondary()">Abrir/Cerrar Secundario</button>
+        <button onclick="toggleQuickslots()">Quickslots</button>
+        <button onclick="toggleCraftingMenu()">Crafteo</button>
+        <button onclick="reloadItems()">Reload Items</button>
+    </div>
+    <div id="preview-badge">PREVIEW MODE — Solo visual</div>
+
+    <!-- ── INVENTARIO PRINCIPAL ─────────────────────────────────────────── -->
+    <div id="inventoryHud">
+        <div id="inventoryBackground"></div>
+        <div id="disabler"></div>
+        <div id="ammobox"></div>
+        <div id="hint"></div>
+        <div class="tooltip"
+            style="display:none; position:absolute; padding:10px; background-color:black; color:white; border-radius:5px;">
+            Tooltip</div>
+
+        <!-- Barra de controles (normalmente generada por JS) -->
+        <div class="controls">
+            <input id="search" type="text" placeholder="Busqueda" />
+            <div id="check" class="dual-weight">
+                <div class="weight-row main-weight-row"><span class="weight-text">33.1/35.0 KG</span></div>
+                <div class="weight-row second-weight-row"><span class="weight-text">0/100</span></div>
+            </div>
+            <button id="close">X</button>
+        </div>
+
+        <div id="inventoryElement">
+            <!-- Items simulados se inyectan por JS -->
+        </div>
+
+        <p id="information">Nombre del item</p>
+        <p id="description">Descripcion del item seleccionado.</p>
+        <div id="item-details-panel" style="display:none;"></div>
+        <div id="item-durability-panel" style="display:none;">
+            <div class="durability-label">DURABILIDAD</div>
+            <div class="durability-bar"></div>
+        </div>
+        <div id="item-actions-panel"></div>
+        <div id="gunbelt-ammo-panel" style="display:none;">
+            <div id="gunbelt-ammo-buttons"></div>
+        </div>
+
+        <div id="cash" style="display:none;"><a id="money-value"></a><a id="hint-money-value" class="dn"></a></div>
+        <div id="gold" style="display:none;"><a id="gold-value"></a><a id="hint-gold-value" class="dn"></a></div>
+        <div id="rol" style="display:none;"><a id="rol-value"></a><a id="hint-rol-value" class="dn"></a></div>
+        <div id="id"><a id="id-value">ID 1</a></div>
+
+        <div class="mainButtonContainer">
+            <button class="mainButton" type="button" id="craftingButton" onclick="toggleCraftingMenu()">
+                <img src="img/crafting-button.png" alt="Crafteo">
+            </button>
+        </div>
+
+        <div class="imageButtonContainer">
+            <div class="carouselWrapper">
+                <div class="carouselContainer" id="carousel1Container">
+                    <button class="carousel-control left">&#10094;</button>
+                    <div class="dropdownButtonContainer mainButton1" id="carousel1"></div>
+                    <button class="carousel-control right">&#10095;</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="transaction-loader" style="display:none;">
+            <div class="wrap-model">
+                <div class="revolver">
+                    <section class="revolver-part"></section>
+                    <section class="revolver-part"></section>
+                    <section class="revolver-part"></section>
+                    <section class="revolver-part"></section>
+                    <section class="revolver-part"></section>
+                    <section class="revolver-part"></section>
+                </div>
+                <div id="loading-text">Cargando...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── INVENTARIO SECUNDARIO ────────────────────────────────────────── -->
+    <div id="secondInventoryHud" style="display:block;">
+        <div id="secondInventoryBackground"></div>
+        <div id="titleHorse">GIBRALTAR ESPAÑOL</div>
+        <div id="secondInventoryElement"></div>
+        <p id="information2"></p>
+        <p id="description2"></p>
+        <div class="capacity">
+            <span style="opacity: 0.75; font-size: 0.65vw;">PESO: </span><a id="current-cap-value">12.50</a> / <a id="capacity-value">50.00 KG</a>
+        </div>
+    </div>
+
+    <!-- ── QUICKSLOT HUD ─────────────────────────────────────────────────── -->
+    <div id="quickslotHud" class="qs-top-right" style="display:none;">
+        <div id="quickslotBackground"></div>
+        <div class="qs-slot" data-index="0">
+            <div class="qs-item-image"
+                style="background-image:url('img/items/consumable_coffee.png'); background-size:contain; background-repeat:no-repeat; background-position:center;">
+            </div>
+            <div class="qs-count"></div>
+        </div>
+        <div class="qs-slot" data-index="1">
+            <div class="qs-item-image"
+                style="background-image:url('img/items/carrot.png'); background-size:contain; background-repeat:no-repeat; background-position:center;">
+            </div>
+            <div class="qs-count"></div>
+        </div>
+        <div class="qs-slot" data-index="2">
+            <div class="qs-item-image"></div>
+            <div class="qs-count"></div>
+        </div>
+        <div class="qs-slot" data-index="3">
+            <div class="qs-item-image"></div>
+            <div class="qs-count"></div>
+        </div>
+        <div class="qs-slot" data-index="4">
+            <div class="qs-item-image"></div>
+            <div class="qs-count"></div>
+        </div>
+    </div>
+
+    <!-- ── MENÚ DE CRAFTEO ───────────────────────────────────────────────── -->
+    <div id="craftingMenu" style="display:none;">
+        <div id="craftingBackground"></div>
+        <div id="craftingTitle">CRAFTING</div>
+        <div id="craftingList">
+            <div class="crafting-recipe">
+                <div class="recipe-header">
+                    <div class="recipe-info">
+                        <div class="recipe-img" style="background-image:url('img/items/consumable_coffee.png')"></div>
+                        <div class="recipe-name">Cafe (1x)</div>
+                    </div>
+                    <button class="recipe-btn">CRAFTEAR</button>
+                </div>
+                <div class="recipe-materials">
+                    <div class="recipe-material">2x Granos de cafe</div>
+                    <div class="recipe-material">1x Agua</div>
+                </div>
+            </div>
+            <div class="crafting-recipe">
+                <div class="recipe-header">
+                    <div class="recipe-info">
+                        <div class="recipe-img" style="background-image:url('img/items/meat_mutton.png')"></div>
+                        <div class="recipe-name">Carne asada (1x)</div>
+                    </div>
+                    <button class="recipe-btn">CRAFTEAR</button>
+                </div>
+                <div class="recipe-materials">
+                    <div class="recipe-material">1x Carne cruda</div>
+                    <div class="recipe-material">2x Madera</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── SCRIPTS ───────────────────────────────────────────────────────── -->
+    <script src="js/vendor/jquery-3.3.1.min.js"></script>
+    <script>
+        window.GetParentResourceName = () => 'vorp_inventory';
+        window.Config = { DoubleClickToUse: true, SpamDelay: 2000 };
+        window.LANGUAGE = { labels: { ammo: 'Ammo: ', serial: 'Serial: ' } };
+        window.imageCache = {};
+        window.mainItemsLayout = [];
+        window.uiUseCooldownUntil = 0;
+
+        const MOCK_ITEMS = [
+            { name: 'dollar', label: 'Dolares', count: 250, limit: 999999, type: 'item_money', group: 9, weight: 0 },
+            { name: 'meat_mutton', label: 'Carne de Oveja', count: 1, limit: 10, type: 'item_standard', group: 3, weight: 0.5 },
+            { name: 'consumable_coffee', label: 'Cafe', count: 2, limit: 10, type: 'item_standard', group: 3, weight: 0.2 },
+            { name: 'carrot', label: 'Zanahoria', count: 3, limit: 20, type: 'item_standard', group: 3, weight: 0.1, percentage: 30 },
+            { name: 'bacon', label: 'Tocino', count: 1, limit: 10, type: 'item_standard', group: 3, weight: 0.3 },
+
+            { name: 'sugar', label: 'Azucar', count: 1, limit: 20, type: 'item_standard', group: 3, weight: 0.1 },
+            { name: 'meat_prime_beef', label: 'Carne de Res', count: 2, limit: 10, type: 'item_standard', group: 3, weight: 0.5, percentage: 70 },
+            { name: 'ring_gold', label: 'Anillo de Oro', count: 2, limit: 5, type: 'item_standard', group: 9, weight: 0.05 },
+            { name: 'rock', label: 'Roca', count: 2, limit: 10, type: 'item_standard', group: 4, weight: 1.0 },
+            { name: 'knife', label: 'Cuchillo', count: 1, limit: 1, type: 'item_standard', group: 5, weight: 0.4, percentage: 60 },
+
+            { name: 'WEAPON_REVOLVER_CATTLEMAN', label: 'Revolver Cattleman', count: 1, limit: 1, type: 'item_weapon', group: 5, weight: 1.2, used: true, serial_number: '1790635840-5419' },
+            { name: 'WEAPON_PISTOL_VOLCANIC', label: 'Pistola Volcanic', count: 1, limit: 1, type: 'item_weapon', group: 5, weight: 1.0, used: false, serial_number: '8821039411-2091' },
+            { name: 'ammorevolvernormal', label: 'Municion Revolver', count: 3, limit: 50, type: 'item_ammo', group: 6, weight: 0.05 },
+            { name: 'wood', label: 'Madera', count: 5, limit: 20, type: 'item_standard', group: 4, weight: 0.5 },
+            { name: 'telegram', label: 'Telegrama', count: 1, limit: 5, type: 'item_standard', group: 7, weight: 0.01 },
+
+            { name: 'empty_envelope', label: 'Sobre vacio', count: 2, limit: 10, type: 'item_standard', group: 7, weight: 0.01 },
+            { name: 'hat', label: 'Sombrero', count: 1, limit: 1, type: 'item_standard', group: 1, weight: 0.2 },
+            { name: 'syringe', label: 'Jeringa', count: 1, limit: 10, type: 'item_standard', group: 2, weight: 0.1 },
+            { name: 'steak', label: 'Filete', count: 1, limit: 10, type: 'item_standard', group: 3, weight: 0.5, percentage: 90 },
+            { name: 'brush', label: 'Cepillo', count: 1, limit: 1, type: 'item_standard', group: 10, weight: 0.4 },
+            { name: 'gunbelt', label: 'Cartuchera', count: 1, limit: 1, type: 'item_standard', group: 6, weight: 0.5 },
+        ];
+
+        function reloadItems() {
+            const el = document.getElementById('inventoryElement');
+            el.innerHTML = '';
+            MOCK_ITEMS.forEach(function (item, index) {
+                const isItem = item.count > 0 || item.type === 'item_weapon';
+                const bg = isItem ? 'url("img/items/' + item.name + '.png"), url("img/slot.png")' : 'url("img/slot.png")';
+                const bgSize = isItem ? '4.2vw 6.5vh, 100% 100%' : '100% 100%';
+                const label = item.label;
+                const weight = item.weight;
+                const count = item.count;
+                if (item.type === 'item_weapon') {
+                    el.insertAdjacentHTML('beforeend',
+                        '<div data-label="' + label + '" data-group="' + item.group + '"' +
+                        ' style="background-image:' + bg + '; background-size:' + bgSize + '; background-repeat:no-repeat, no-repeat; background-position:center, center;"' +
+                        ' id="item-' + index + '" class="item"' +
+                        ' onmouseenter="previewHoverItem(' + index + ')"' +
+                        ' onclick="previewHoverItem(' + index + ')">' +
+                        '<div class="equipped-icon" style="display:' + (item.used ? 'block' : 'none') + ';"></div>' +
+                        '</div>');
+                } else if (isItem) {
+                    el.insertAdjacentHTML('beforeend',
+                        '<div data-group="' + item.group + '" data-label="' + label + '"' +
+                        ' style="background-image:' + bg + '; background-size:' + bgSize + '; background-repeat:no-repeat, no-repeat; background-position:center, center;"' +
+                        ' id="item-' + index + '" class="item"' +
+                        ' onmouseenter="previewHoverItem(' + index + ')"' +
+                        ' onclick="previewHoverItem(' + index + ')">' +
+                        '<div class="count"><span style="color:Black">' + count + '</span></div>' +
+                        '</div>');
+                } else {
+                    el.insertAdjacentHTML('beforeend',
+                        '<div data-group="0" id="item-' + index + '" class="item"></div>');
+                }
+            });
+        }
+
+        function renderPreviewDurability(pct) {
+            const panel = document.getElementById('item-durability-panel');
+            if (!panel) return;
+            if (pct === null || pct === undefined || isNaN(pct)) {
+                panel.style.display = 'none';
+                return;
+            }
+            const activeCount = Math.max(0, Math.min(10, Math.round(pct / 10)));
+            let html = '';
+            for (let i = 1; i <= 10; i++) {
+                const cls = (i <= activeCount) ? 'active' : 'consumed';
+                html += '<div class="durability-tick ' + cls + '"></div>';
+            }
+            panel.querySelector('.durability-bar').innerHTML = html;
+            panel.style.display = 'flex';
+        }
+
+        function renderPreviewDetails(item) {
+            const panel = document.getElementById('item-details-panel');
+            if (!panel) return;
+            if (!item) {
+                panel.style.display = 'none';
+                panel.innerHTML = '';
+                return;
+            }
+
+            let rowsHtml = '';
+            if (item.type === 'item_weapon') {
+                const w = (Number(item.weight) || 0).toFixed(2) + ' KG';
+                rowsHtml += '<div class="item-detail-row"><span class="item-detail-label">PESO:</span><span class="item-detail-value">' + w + '</span></div>';
+                if (item.serial_number) {
+                    rowsHtml += '<div class="item-detail-row"><span class="item-detail-label">Nº SERIE:</span><span class="item-detail-value">' + item.serial_number + '</span></div>';
+                }
+            } else if (item.type === 'item_money') {
+                if (item.weight && item.weight > 0) {
+                    rowsHtml += '<div class="item-detail-row"><span class="item-detail-label">PESO:</span><span class="item-detail-value">' + item.weight.toFixed(2) + ' KG</span></div>';
+                }
+            } else {
+                const totalWeight = ((Number(item.weight) || 0) * (Number(item.count) || 1)).toFixed(2) + ' KG';
+                rowsHtml += '<div class="item-detail-row"><span class="item-detail-label">PESO:</span><span class="item-detail-value">' + totalWeight + '</span></div>';
+                if (item.limit && item.limit > 0) {
+                    rowsHtml += '<div class="item-detail-row"><span class="item-detail-label">LÍMITE:</span><span class="item-detail-value">' + item.limit + '</span></div>';
+                }
+            }
+
+            if (rowsHtml) {
+                panel.innerHTML = rowsHtml;
+                panel.style.display = 'flex';
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+
+        function previewClearItem() {
+            window.currentPreviewItem = null;
+            document.querySelectorAll('#inventoryElement .item').forEach(el => el.classList.remove('panel-item-active'));
+            const container = document.getElementById('item-actions-panel');
+            if (container) container.innerHTML = '';
+            const latPanel = document.getElementById('gunbelt-ammo-panel');
+            if (latPanel) {
+                latPanel.style.display = 'none';
+                document.getElementById('gunbelt-ammo-buttons').innerHTML = '';
+            }
+            renderPreviewDurability(null);
+            renderPreviewDetails(null);
+            document.getElementById('information').textContent = '';
+            document.getElementById('description').textContent = '';
+        }
+
+        function previewHoverItem(index) {
+            const item = MOCK_ITEMS[index];
+            if (!item) return;
+            window.currentPreviewItem = item;
+
+            document.querySelectorAll('#inventoryElement .item').forEach(el => el.classList.remove('panel-item-active'));
+            const activeEl = document.getElementById('item-' + index);
+            if (activeEl) activeEl.classList.add('panel-item-active');
+
+            document.getElementById('information').textContent = item.label;
+            document.getElementById('description').textContent = (item.desc || ('Item de inventario - ' + item.weight + 'kg x' + item.count));
+
+            renderPreviewDetails(item);
+            renderPreviewDurability(item.percentage !== undefined ? item.percentage : null);
+
+            const container = document.getElementById('item-actions-panel');
+            if (!container) return;
+            container.innerHTML = '';
+
+            let actions = [];
+            if (item.name === 'gunbelt') {
+                actions = [
+                    'NORMAL REPEATER : 30',
+                    'NORMAL RIFLE : 15',
+                    'NORMAL REVOLVER : 6',
+                    'NORMAL SHOTGUN : 10',
+                    'SPLIT POINT REPEATER : 25',
+                    'EXPRESS RIFLE : 12',
+                    'HIGH VELOCITY REVOLVER : 18',
+                    'SLUG SHOTGUN : 8',
+                    'EXPLOSIVE RIFLE : 4'
+                ];
+            } else if (item.type === 'item_weapon') {
+                actions = [item.used ? 'DESEQUIPAR' : 'EQUIPAR', 'DAR', 'TIRAR', 'MOVER'];
+            } else if (item.type === 'item_money') {
+                actions = ['DAR DINERO', 'SOLTAR DINERO', 'EMPAQUETAR', 'MOVER'];
+            } else {
+                actions = ['USAR', 'DAR', 'TIRAR', 'MOVER'];
+            }
+
+            const actionKeys = ['E', 'G', 'X', 'C'];
+            actions.slice(0, 4).forEach((text, idx) => {
+                const key = actionKeys[idx] || '';
+                const btn = document.createElement('button');
+                btn.className = 'panel-action-btn';
+                btn.type = 'button';
+                btn.setAttribute('data-key', key);
+                btn.innerHTML = '<span class="panel-action-key">' + key + '</span><span class="panel-action-text">' + text + '</span>';
+                btn.dataset.text = text;
+                container.appendChild(btn);
+            });
+
+            // Panel lateral de municiones adicionales
+            const latPanel = document.getElementById('gunbelt-ammo-panel');
+            const latContainer = document.getElementById('gunbelt-ammo-buttons');
+            if (latContainer) latContainer.innerHTML = '';
+
+            if (item.name === 'gunbelt' && actions.length > 4) {
+                const lateralKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'F', 'R', 'T', 'Y', 'V'];
+                actions.slice(4).forEach((text, idx) => {
+                    const key = lateralKeys[idx] || String(idx + 1);
+                    const btn = document.createElement('button');
+                    btn.className = 'lateral-ammo-btn';
+                    btn.type = 'button';
+                    btn.setAttribute('data-key', key);
+                    btn.innerHTML = '<span class="lateral-ammo-key">' + key + '</span><span class="lateral-ammo-text">' + text + '</span>';
+                    btn.dataset.text = text;
+                    btn.onclick = () => console.log('Ammo selected:', text);
+                    latContainer.appendChild(btn);
+                });
+                if (latPanel) latPanel.style.display = 'block';
+            } else {
+                if (latPanel) latPanel.style.display = 'none';
+            }
+        }
+
+        $(document).on('mouseleave', '#inventoryElement .item, #secondInventoryElement .item', function(e) {
+            if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel').length) {
+                return;
+            }
+            const nextItem = e.relatedTarget ? $(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item') : null;
+            if (!nextItem || !nextItem.length) {
+                previewClearItem();
+            }
+        });
+
+        $(document).on('mouseleave', '#gunbelt-ammo-panel', function(e) {
+            if (e.relatedTarget && ($(e.relatedTarget).closest('#inventoryElement .item, #secondInventoryElement .item').length || $(e.relatedTarget).closest('#inventoryBackground').length)) {
+                return;
+            }
+            previewClearItem();
+        });
+
+        $(document).on('mouseleave', '#inventoryElement, #secondInventoryElement', function(e) {
+            if (e.relatedTarget && $(e.relatedTarget).closest('#gunbelt-ammo-panel').length) {
+                return;
+            }
+            previewClearItem();
+        });
+
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('#inventoryElement .item, #secondInventoryElement .item').length && !$(e.target).closest('#gunbelt-ammo-panel').length) {
+                previewClearItem();
+            }
+        });
+
+        $(document).on('keydown', function(e) {
+            const tag = (e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '');
+            if (tag === 'input' || tag === 'textarea') return;
+            if (!window.currentPreviewItem) return;
+            const key = (e.key || '').toUpperCase();
+            if (['E', 'G', 'X', 'C'].includes(key)) {
+                const btn = document.querySelector('#item-actions-panel .panel-action-btn[data-key="' + key + '"]');
+                if (btn) {
+                    e.preventDefault();
+                    btn.classList.add('btn-key-pressed');
+                    setTimeout(() => btn.classList.remove('btn-key-pressed'), 180);
+                    console.log('Action triggered by key:', key, btn.dataset.text);
+                }
+                return;
+            }
+            const lateralKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'F', 'R', 'T', 'Y', 'V'];
+            if (lateralKeys.includes(key)) {
+                const latBtn = document.querySelector('#gunbelt-ammo-buttons .lateral-ammo-btn[data-key="' + key + '"]');
+                if (latBtn) {
+                    e.preventDefault();
+                    latBtn.classList.add('btn-key-pressed');
+                    setTimeout(() => latBtn.removeClass('btn-key-pressed'), 180);
+                    console.log('Lateral ammo triggered by key:', key, latBtn.dataset.text);
+                }
+            }
+        });
+
+        const PREVIEW_ACTIONS = {
+            all: { types: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 ], desc: "Todos los objetos", img: "satchel_nav_all.png" },
+            medical: { types: [ 0, 2 ], desc: "Medicina y remedios", img: "satchel_nav_remedies.png" },
+            foods: { types: [ 0, 3 ], desc: "Comida y provisiones", img: "satchel_nav_provisions.png" },
+            weapons: { types: [ 0, 5 ], desc: "Armas", img: "weapon.png" },
+            ammo: { types: [ 0, 6 ], desc: "Municiones", img: "ammo.png" },
+            tools: { types: [ 0, 4 ], desc: "Herramientas y materiales", img: "satchel_nav_materials.png" },
+            animals: { types: [ 0, 8 ], desc: "Materiales de animales", img: "satchel_nav_animals.png" },
+            documents: { types: [ 0, 7 ], desc: "Documentos", img: "satchel_nav_documents.png" },
+            valuables: { types: [ 0, 9 ], desc: "Objetos de valor", img: "satchel_nav_valuables.png" },
+            horse: { types: [ 0, 10 ], desc: "Objetos de caballo", img: "satchel_nav_horse_items.png" },
+            herbs: { types: [ 0, 11 ], desc: "Hierbas", img: "satchel_nav_herbs.png" },
+        };
+        window.Actions = PREVIEW_ACTIONS;
+        window.currentActiveCategory = 'all';
+
+        function buildPreviewCategories() {
+            const container = document.getElementById('carousel1');
+            if (!container) return;
+            container.innerHTML = '';
+            Object.keys(PREVIEW_ACTIONS).forEach(key => {
+                const act = PREVIEW_ACTIONS[key];
+                const btn = document.createElement('button');
+                btn.className = 'dropdownButton' + (key === 'all' ? ' active' : '');
+                btn.type = 'button';
+                btn.setAttribute('data-type', 'itemtype');
+                btn.setAttribute('data-param', key);
+                btn.setAttribute('title', act.desc || key);
+                btn.onclick = () => previewActionCategory(key);
+
+                const div = document.createElement('div');
+                const img = document.createElement('img');
+                img.src = 'img/itemtypes/' + act.img;
+                img.alt = key;
+                div.appendChild(img);
+                btn.appendChild(div);
+                container.appendChild(btn);
+            });
+        }
+
+        function previewActionCategory(key) {
+            window.currentActiveCategory = key;
+            document.querySelectorAll('#carousel1 .dropdownButton').forEach(b => b.classList.remove('active'));
+            document.querySelector(`#carousel1 .dropdownButton[data-param="${key}"]`)?.classList.add('active');
+            const act = PREVIEW_ACTIONS[key] || PREVIEW_ACTIONS['all'];
+            previewFilterItems(act.types);
+        }
+
+        function previewFilterItems(types) {
+            const searchVal = ($("#search").val() || "").trim().toLowerCase();
+            $("#inventoryElement .item").each(function () {
+                const $it = $(this);
+                const rawGroup = $it.data("group") !== undefined ? $it.data("group") : $it.attr("data-group");
+                const group = Number(rawGroup);
+                const isGunbelt = ($it.attr('id') === 'item-gunbelt' || $it.attr('id') === 'item-20');
+
+                let matchCat = (!types || types.length === 0 || (isGunbelt && (types.includes(6) || types.includes(1))) || types.some(t => Number(t) === group));
+                if (!matchCat) {
+                    $it.hide();
+                    return;
+                }
+                if (!searchVal) {
+                    $it.show();
+                    return;
+                }
+                const label = ($it.data("label") || $it.attr("data-label") || "").toString().toLowerCase();
+                if (label.indexOf(searchVal) >= 0) {
+                    $it.show();
+                } else {
+                    $it.hide();
+                }
+            });
+        }
+
+        const MOCK_SECONDARY_ITEMS = [
+            { name: 'dog_whistle', label: 'Silbato de Perro', count: 1, limit: 1, type: 'item_standard', weight: 0.1, desc: 'Silbato para llamar a tu perro' },
+            { name: 'meat_mutton', label: 'Carne Cruda', count: 1, limit: 15, type: 'item_standard', weight: 0.4, maxDegradation: 120, percentage: 0, desc: 'Carne cruda fresca, lista para cocinar.' },
+            { name: 'carrot', label: 'Zanahoria', count: 5, limit: 20, type: 'item_standard', weight: 0.1, maxDegradation: 120, percentage: 80, desc: 'Zanahoria fresca para caballo.' },
+            { name: 'ammorevolvernormal', label: 'Munición Revolver', count: 12, limit: 60, type: 'item_ammo', weight: 0.05, desc: 'Cartuchos estándar calibre revolver.' },
+        ];
+
+        function reloadSecondaryItems() {
+            const el = document.getElementById('secondInventoryElement');
+            if (!el) return;
+            el.innerHTML = '';
+            const totalSlots = 24;
+            MOCK_SECONDARY_ITEMS.forEach(function (item, index) {
+                const bg = 'url("img/items/' + item.name + '.png"), url("img/slot.png")';
+                el.insertAdjacentHTML('beforeend',
+                    '<div data-label="' + item.label + '" data-group="1"' +
+                    ' style="background-image:' + bg + '; background-size:4.2vw 6.5vh, 100% 100%; background-repeat:no-repeat, no-repeat; background-position:center, center;"' +
+                    ' id="second-item-' + index + '" class="item"' +
+                    ' onmouseenter="previewHoverSecondaryItem(' + index + ')"' +
+                    ' onclick="previewHoverSecondaryItem(' + index + ')">' +
+                    '</div>'
+                );
+            });
+            for (let i = MOCK_SECONDARY_ITEMS.length; i < totalSlots; i++) {
+                el.insertAdjacentHTML('beforeend', '<div data-group="0" class="item"></div>');
+            }
+        }
+
+        function previewHoverSecondaryItem(index) {
+            const item = MOCK_SECONDARY_ITEMS[index];
+            if (!item) return;
+            window.currentPreviewItem = item;
+
+            document.querySelectorAll('#inventoryElement .item, #secondInventoryElement .item').forEach(el => el.classList.remove('panel-item-active'));
+            const activeEl = document.getElementById('second-item-' + index);
+            if (activeEl) activeEl.classList.add('panel-item-active');
+
+            document.getElementById('information').textContent = item.label;
+            document.getElementById('description').textContent = (item.desc || ('Item del inventario secundario - ' + item.weight + 'kg x' + item.count));
+
+            renderPreviewDetails(item);
+            renderPreviewDurability(item.percentage !== undefined ? item.percentage : null);
+
+            const container = document.getElementById('item-actions-panel');
+            if (container) container.innerHTML = '';
+            const latPanel = document.getElementById('gunbelt-ammo-panel');
+            if (latPanel) latPanel.style.display = 'none';
+        }
+
+        window.isSecondaryOpen = true;
+
+        function updatePreviewWeight() {
+            var checkEl = document.getElementById('check');
+            if (!checkEl) return;
+            if (window.isSecondaryOpen) {
+                checkEl.classList.remove('single-weight');
+                checkEl.classList.add('dual-weight');
+            } else {
+                checkEl.classList.remove('dual-weight');
+                checkEl.classList.add('single-weight');
+            }
+        }
+
+        function toggleSecondary() {
+            var el = document.getElementById('secondInventoryHud');
+            var isHidden = (el.style.display === 'none');
+            el.style.display = isHidden ? 'block' : 'none';
+            window.isSecondaryOpen = isHidden;
+            updatePreviewWeight();
+        }
+        function toggleQuickslots() {
+            var el = document.getElementById('quickslotHud');
+            el.style.display = el.style.display === 'none' ? 'grid' : 'none';
+        }
+        function toggleCraftingMenu() {
+            var el = document.getElementById('craftingMenu');
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        $(document).ready(function () {
+            reloadItems();
+            reloadSecondaryItems();
+            buildPreviewCategories();
+            previewHoverItem(0);
+
+            $("#search").on("input", function () {
+                const act = PREVIEW_ACTIONS[window.currentActiveCategory] || PREVIEW_ACTIONS['all'];
+                previewFilterItems(act.types);
+            });
+
+            if (window.location.hash === '#crafting') {
+                toggleCraftingMenu();
+            } else if (window.location.hash === '#quickslots') {
+                toggleQuickslots();
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -33,13 +33,22 @@ function secondarySetTitle(title) {
 }
 //amount of items
 function secondarySetCurrentCapacity(cap) {
-    document.getElementById("current-cap-value").innerHTML = cap;
+    window.secondCurrentCap = cap;
+    const el = document.getElementById("current-cap-value");
+    if (el) el.innerHTML = cap;
+    if (typeof window.updateWeightDisplay === 'function') {
+        window.updateWeightDisplay();
+    }
 }
 
 //capacty of inventory
 function secondarySetCapacity(cap, weight) {
-    $(".capacity").show();
-    document.getElementById("capacity-value").innerHTML = weight ? weight + " " + Config.WeightMeasure : cap;
+    window.secondCapacityValue = weight ? weight + " " + Config.WeightMeasure : cap;
+    const el = document.getElementById("capacity-value");
+    if (el) el.innerHTML = window.secondCapacityValue;
+    if (typeof window.updateWeightDisplay === 'function') {
+        window.updateWeightDisplay();
+    }
 }
 
 /**
@@ -172,6 +181,7 @@ function getItemTooltipContent(image, groupKey, group, limit, weight, degradatio
 
 
 function initiateSecondaryInventory(title, capacity, weight) {
+    window.isSecondaryOpen = true;
 
     $("#secondInventoryHud").append(
         `<div class='controls'><div class='controls-center'><input type='text' id='secondarysearch' placeholder='${LANGUAGE.inventorysearch}'/></div></div>`
@@ -198,7 +208,13 @@ function initiateSecondaryInventory(title, capacity, weight) {
     if (capacity) {
         secondarySetCapacity(capacity, weight);
     } else {
-        secondarySetCapacity("0")
+        secondarySetCapacity("0");
+    }
+
+    if (typeof window.updateWeightDisplay === 'function') {
+        window.updateWeightDisplay();
+        setTimeout(window.updateWeightDisplay, 50);
+        setTimeout(window.updateWeightDisplay, 200);
     }
 }
 
@@ -324,13 +340,19 @@ function dropGetHowMany(item, type, hash, id, metadata, count, degradation) {
                     autofocus: "true",
                 },
                 validate: function (value, item, type) {
-                    if (!value || value <= 0) {
+                    // Si el input está vacío, usar la cantidad máxima
+                    let finalValue = value;
+                    if (!value || value.trim() === "") {
+                        finalValue = count;
+                    }
+                    
+                    if (!finalValue || finalValue <= 0) {
                         dialog.close();
                         return;
                     }
 
                     if (type !== "item_money" && type !== "item_gold") {
-                        if (!isInt(value)) {
+                        if (!isInt(finalValue)) {
                             return;
                         }
                     }
@@ -339,7 +361,7 @@ function dropGetHowMany(item, type, hash, id, metadata, count, degradation) {
                         item: item,
                         id: id,
                         type: type,
-                        number: value,
+                        number: finalValue,
                         metadata: metadata,
                         degradation: degradation,
                     });
@@ -373,12 +395,18 @@ function giveGetHowMany(item, type, hash, id, metadata, count) {
                     autofocus: "true",
                 },
                 validate: function (value, item, type) {
-                    if (!value || value <= 0) {
+                    // Si el input está vacío, usar la cantidad máxima
+                    let finalValue = value;
+                    if (!value || value.trim() === "") {
+                        finalValue = count;
+                    }
+                    
+                    if (!finalValue || finalValue <= 0) {
                         dialog.close();
                         return;
                     }
 
-                    if (!isInt(value)) {
+                    if (!isInt(finalValue)) {
                         dialog.close();
                         return;
                     }
@@ -388,7 +416,7 @@ function giveGetHowMany(item, type, hash, id, metadata, count) {
                         what: "give",
                         item: item,
                         id: id,
-                        count: value,
+                        count: parseInt(finalValue),
                         metadata: metadata,
                     }));
                     return true;
@@ -453,7 +481,7 @@ function giveGetHowManyMoney() {
     });
 }
 
-function giveammotoplayer(ammotype) {
+function giveammotoplayer(ammotype, maxCount) {
     dialog.prompt({
         title: LANGUAGE.prompttitle,
         button: LANGUAGE.promptaccept,
@@ -465,11 +493,17 @@ function giveammotoplayer(ammotype) {
             autofocus: "true",
         },
         validate: function (value, item, type) {
-            if (!value || value <= 0) {
+            // Si el input está vacío, usar la cantidad máxima
+            let finalValue = value;
+            if (!value || value.trim() === "") {
+                finalValue = maxCount;
+            }
+            
+            if (!finalValue || finalValue <= 0) {
                 dialog.close();
                 return;
             }
-            if (!isInt(value)) {
+            if (!isInt(finalValue)) {
                 return;
             }
             $.post(
@@ -478,7 +512,7 @@ function giveammotoplayer(ammotype) {
                     type: type,
                     what: "give",
                     item: item,
-                    count: value,
+                    count: parseInt(finalValue),
                 })
             );
             return true;

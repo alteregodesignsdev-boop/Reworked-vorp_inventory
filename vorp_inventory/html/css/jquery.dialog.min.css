@@ -70,23 +70,22 @@
 }
 
 #dialog-holder #dialog-center td .dialog-alert {
-	z-index: 999;
-	position: relative;
-	margin: 0 auto;
-	padding: 4vh 2vw;
-	background-image: url(../img/bgPanel2.png);
-	background-repeat: no-repeat;
-	background-position: center;
-	max-width: 14vw;
-	word-break: break-word;
-	display: none;
-	opacity: 0;
-	transition: transform .5s, opacity .45s;
-	background-size: 100% 100%;
-	z-index: 999;
-	transition: transform .5s, opacity .45s;
-	font-size: 1vw;
-
+    z-index: 999;
+    position: relative;
+    margin: 0 auto;
+    padding: 4vh 2vw;
+    background-image: url(../img/bgPanelcashonly.png);
+    background-repeat: no-repeat;
+    background-position: center;
+    max-width: 14vw;
+    word-break: break-word;
+    display: none;
+    opacity: 0;
+    transition: transform .5s, opacity .45s;
+    background-size: 100% 100%;
+    z-index: 999;
+    transition: transform .5s, opacity .45s;
+    font-size: 1vw;
 }
 
 @keyframes shake {
@@ -310,9 +309,8 @@
 
 
 	#dialog-holder #dialog-center td .dialog-alert {
-
-		left: 160px;
-
+		left: -1vh;
+		top: -31vh;
 	}
 
 

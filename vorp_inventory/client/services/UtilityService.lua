@@ -1,41 +1,93 @@
 Utils = {}
 
 function Utils.cleanAmmo(id)
-	local PlayerPedId = PlayerPedId()
-	if UserWeapons[id] and next(UserWeapons[id]) then
+	-- Protección: Verificar que UserWeapons y el arma existan
+	if not UserWeapons or not UserWeapons[id] or not next(UserWeapons[id]) then
+		return
+	end
+	
+	-- Protección: Usar pcall para todo el bloque
+	local success, err = pcall(function()
+		local PlayerPedId = PlayerPedId()
+		if not PlayerPedId or PlayerPedId == 0 then
+			return
+		end
+		
 		SetPedAmmo(PlayerPedId, joaat(UserWeapons[id]:getName()), 0)
 		for k, _ in pairs(UserWeapons[id]:getAllAmmo()) do
 			SetPedAmmoByType(PlayerPedId, joaat(k), 0)
 		end
+	end)
+	
+	if not success then
+		print("^1[UtilityService]^7 Error in cleanAmmo: " .. tostring(err))
 	end
 end
 
 function Utils.useWeapon(id)
-	local PlayerPedId = PlayerPedId()
-	if UserWeapons[id]:getUsed2() then
-		local weaponHash = joaat(UserWeapons[id]:getName())
-		GiveWeaponToPed(PlayerPedId, weaponHash, 0, true, true, 3, false, 0.5, 1.0, 752097756, false, 0, false)
-		SetCurrentPedWeapon(PlayerPedId, weaponHash, false, 0, false, false)
-		SetPedAmmo(PlayerPedId, weaponHash, 0)
-		for _, ammo in pairs(UserWeapons[id]:getAllAmmo()) do
-			SetPedAmmoByType(PlayerPedId, joaat(_), ammo)
+	-- Protección: Verificar que UserWeapons y el arma existan PRIMERO
+	if not UserWeapons or not UserWeapons[id] then
+		print("^3[UtilityService]^7 useWeapon called but weapon " .. tostring(id) .. " not found")
+		return
+	end
+	
+	-- Protección: Usar pcall para todo el bloque
+	local success, err = pcall(function()
+		local PlayerPedId = PlayerPedId()
+		if not PlayerPedId or PlayerPedId == 0 then
+			print("^3[UtilityService]^7 useWeapon called but PlayerPedId is invalid")
+			return
 		end
-	else
-		Utils.oldUseWeapon(id)
+		
+		if UserWeapons[id]:getUsed2() then
+			local weaponHash = joaat(UserWeapons[id]:getName())
+			GiveWeaponToPed(PlayerPedId, weaponHash, 0, false, true, 3, true, 0.5, 1.0, 752097756, false, 0.0, false)
+			SetCurrentPedWeapon(PlayerPedId, weaponHash, false, 3, false, false)
+			SetPedAmmo(PlayerPedId, weaponHash, 0)
+			for _, ammo in pairs(UserWeapons[id]:getAllAmmo()) do
+				SetPedAmmoByType(PlayerPedId, joaat(_), ammo)
+			end
+			UserWeapons[id]:loadComponents()
+		else
+			Utils.oldUseWeapon(id)
+		end
+	end)
+	
+	if not success then
+		print("^1[UtilityService]^7 Error in useWeapon: " .. tostring(err))
 	end
 end
 
 function Utils.oldUseWeapon(id)
-	local PlayerPedId = PlayerPedId()
-	local weaponHash = joaat(UserWeapons[id]:getName())
-	GiveWeaponToPed(PlayerPedId, weaponHash, 0, true, true, 2, false, 0.5, 1.0, 752097756, false, 0, false)
-	SetCurrentPedWeapon(PlayerPedId, weaponHash, false, 1, false, false)
-	SetPedAmmo(PlayerPedId, weaponHash, 0)
-	for type, amount in pairs(UserWeapons[id]:getAllAmmo()) do
-		SetPedAmmoByType(PlayerPedId, joaat(type), amount)
+	-- Protección: Verificar que UserWeapons y el arma existan PRIMERO
+	if not UserWeapons or not UserWeapons[id] then
+		print("^3[UtilityService]^7 oldUseWeapon called but weapon " .. tostring(id) .. " not found")
+		return
 	end
-	UserWeapons[id]:setUsed(true)
-	TriggerServerEvent("vorpinventory:setUsedWeapon", id, UserWeapons[id]:getUsed(), UserWeapons[id]:getUsed2())
+	
+	-- Protección: Usar pcall para todo el bloque
+	local success, err = pcall(function()
+		local PlayerPedId = PlayerPedId()
+		if not PlayerPedId or PlayerPedId == 0 then
+			print("^3[UtilityService]^7 oldUseWeapon called but PlayerPedId is invalid")
+			return
+		end
+		
+		local weaponHash = joaat(UserWeapons[id]:getName())
+		GiveWeaponToPed(PlayerPedId, weaponHash, 0, false, true, 2, true, 0.5, 1.0, 752097756, false, 0.0, false)
+		SetCurrentPedWeapon(PlayerPedId, weaponHash, false, 2, false, false)
+		SetPedAmmo(PlayerPedId, weaponHash, 0)
+		for type, amount in pairs(UserWeapons[id]:getAllAmmo()) do
+			SetPedAmmoByType(PlayerPedId, joaat(type), amount)
+		end
+		UserWeapons[id]:loadComponents()
+		UserWeapons[id]:setUsed(true)
+		TriggerServerEvent("vorpinventory:setUsedWeapon", id, UserWeapons[id]:getUsed(), UserWeapons[id]:getUsed2())
+	end)
+	
+	if not success then
+		print("^1[UtilityService]^7 Error in oldUseWeapon: " .. tostring(err))
+	end
 end
 
 function Utils.expandoProcessing(object)

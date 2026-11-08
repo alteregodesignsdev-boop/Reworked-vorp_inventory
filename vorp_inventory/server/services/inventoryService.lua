@@ -22,6 +22,20 @@ local function normalizePositiveInt(value)
 	return n
 end
 
+-- Nueva función para normalizar dinero (permite decimales)
+local function normalizePositiveMoney(value)
+	local n = tonumber(value)
+	if not n then
+		return nil
+	end
+	-- Redondear a 2 decimales
+	n = math.floor(n * 100 + 0.5) / 100
+	if n <= 0 then
+		return nil
+	end
+	return n
+end
+
 local function rateLimit(source, key, cooldownMs)
 	local now = GetGameTimer()
 	local perSource = actionTimestamps[source]
@@ -175,9 +189,20 @@ function InventoryService.UseItem(data)
 
 	local svItem = SvUtils.DoesItemExist(itemName, "UseItem")
 	if not svItem then return end
-
 	local item = userInventory[itemId]
-	if not item or not UsableItemsFunctions[itemName] then return end
+	if not item then return end
+	local useFn = UsableItemsFunctions[itemName]
+	if not useFn and InventoryAPI and InventoryAPI.tryRecoverUsableItemRegistrations then
+		local restarted = InventoryAPI.tryRecoverUsableItemRegistrations()
+		if restarted then
+			for _ = 1, 12 do
+				Wait(250)
+				useFn = UsableItemsFunctions[itemName]
+				if useFn then break end
+			end
+		end
+	end
+	if not useFn then return end
 
 	local arguments <const> = {
 		source = _source,
@@ -220,7 +245,7 @@ function InventoryService.UseItem(data)
 
 	TriggerEvent("vorp_inventory:Server:OnItemUse", arguments)
 
-	local success <const>, result <const> = pcall(UsableItemsFunctions[itemName], arguments)
+	local success <const>, result <const> = pcall(useFn, arguments)
 	if not success then
 		return print("Function call failed with error:", result, "a usable item :", itemName, " have an error in the callback function")
 	end
@@ -232,7 +257,7 @@ function InventoryService.DropMoney(amount)
 	local user <const> = Core.getUser(_source)
 	if not user then return end
 
-	amount = normalizePositiveInt(amount)
+	amount = normalizePositiveMoney(amount)
 	if not amount then
 		return
 	end
@@ -244,12 +269,16 @@ function InventoryService.DropMoney(amount)
 	SvUtils.ProcessUser(_source)
 
 	local character = user.getUsedCharacter
-	local userMoney <const> = character.money
+	local userMoney = character.money
 	local charid <const> = character.charIdentifier
 
-	if userMoney < amount then return SvUtils.Trem(_source) end
+	if userMoney < amount then 
+		return SvUtils.Trem(_source) 
+	end
 
-	if not InventoryService.CheckNewPlayer(_source, charid) then return SvUtils.Trem(_source) end
+	if not InventoryService.CheckNewPlayer(_source, charid) then 
+		return SvUtils.Trem(_source) 
+	end
 
 	if not Config.DeleteOnlyDontDrop then
 		TriggerClientEvent("vorpInventory:createMoneyPickup", _source, amount)
@@ -271,7 +300,7 @@ function InventoryService.giveMoneyToPlayer(target, amount)
 	local user <const> = Core.getUser(_source)
 	local targetUser <const> = Core.getUser(_target)
 
-	amount = normalizePositiveInt(amount)
+	amount = normalizePositiveMoney(amount)
 	if not amount then
 		return TriggerClientEvent("vorp_inventory:ProcessingReady", _source)
 	end
@@ -287,7 +316,8 @@ function InventoryService.giveMoneyToPlayer(target, amount)
 	end
 	local sourceCharacter <const> = user.getUsedCharacter
 	local targetCharacter <const> = targetUser.getUsedCharacter
-	local sourceMoney <const> = sourceCharacter.money
+	-- sourceMoney ya está en dólares (no en centavos)
+	local sourceMoney = sourceCharacter.money
 	local charid <const> = sourceCharacter.charIdentifier
 	if not InventoryService.CheckNewPlayer(_source, charid) then
 		return TriggerClientEvent("vorp_inventory:ProcessingReady", _source)
@@ -304,6 +334,11 @@ function InventoryService.giveMoneyToPlayer(target, amount)
 
 	sourceCharacter.removeCurrency(0, amount)
 	targetCharacter.addCurrency(0, amount)
+	
+	-- Notificar a ambos clientes que el dinero se actualizó
+	TriggerClientEvent("vorpInventory:moneyUpdated", _source)
+	TriggerClientEvent("vorpInventory:moneyUpdated", _target)
+	
 	Core.NotifyRightTip(_source, T.YouPaid .. amount .. " ID: " .. _target, 3000)
 	Core.NotifyRightTip(_target, T.YouReceived .. amount .. " ID: " .. _source, 3000)
 
@@ -325,7 +360,7 @@ function InventoryService.DropGold(amount)
 	local user <const> = Core.getUser(_source)
 	if not user then return end
 
-	amount = normalizePositiveInt(amount)
+	amount = normalizePositiveMoney(amount)
 	if not amount then
 		return
 	end
@@ -334,7 +369,8 @@ function InventoryService.DropGold(amount)
 	end
 
 	local userCharacter <const> = user.getUsedCharacter
-	local userGold <const> = userCharacter.gold
+	-- userGold ya está en dólares (no en centavos)
+	local userGold = userCharacter.gold
 
 	if userGold < amount then return end
 
@@ -361,7 +397,7 @@ function InventoryService.giveGoldToPlayer(target, amount)
 	local _source <const> = source
 
 	target = tonumber(target)
-	amount = normalizePositiveInt(amount)
+	amount = normalizePositiveMoney(amount)
 	if not amount then
 		return
 	end
@@ -378,7 +414,8 @@ function InventoryService.giveGoldToPlayer(target, amount)
 
 	local sourceCharacter <const> = user.getUsedCharacter
 	local targetCharacter <const> = targetUser.getUsedCharacter
-	local sourceGold <const> = sourceCharacter.gold
+	-- sourceGold ya está en dólares (no en centavos)
+	local sourceGold = sourceCharacter.gold
 
 	if sourceGold < amount then
 		Core.NotifyRightTip(_source, T.NotEnoughGold, 3000)
@@ -390,6 +427,10 @@ function InventoryService.giveGoldToPlayer(target, amount)
 
 	sourceCharacter.removeCurrency(1, amount)
 	targetCharacter.addCurrency(1, amount)
+	
+	-- Notificar a ambos clientes que el oro se actualizó
+	TriggerClientEvent("vorpInventory:moneyUpdated", _source)
+	TriggerClientEvent("vorpInventory:moneyUpdated", target)
 
 	Core.NotifyRightTip(_source, T.YouPaid .. amount .. "ID: " .. target, 3000)
 	Core.NotifyRightTip(target, T.YouReceived .. amount .. "ID: " .. _source, 3000)
@@ -402,6 +443,51 @@ function InventoryService.giveGoldToPlayer(target, amount)
 
 	local info <const> = { source = _source, name = Logs.WebHook.webhookname, title = title, description = description, webhook = Logs.WebHook.webhook, color = Logs.WebHook.colorgiveGold, }
 	SvUtils.SendDiscordWebhook(info)
+
+	TriggerClientEvent("vorp_inventory:ProcessingReady", _source)
+	SvUtils.Trem(_source)
+end
+
+function InventoryService.givePesoToPlayer(target, amount)
+	local _source <const> = source
+
+	target = tonumber(target)
+	amount = normalizePositiveMoney(amount)
+	if not amount then
+		return
+	end
+	if not rateLimit(_source, "GivePeso", 250) then
+		return
+	end
+	if not isPlayerInRange(_source, target, 5.0) then
+		return
+	end
+
+	local user <const> = Core.getUser(_source)
+	local targetUser <const> = Core.getUser(target)
+	if not user or not targetUser then return end
+
+	local sourceCharacter <const> = user.getUsedCharacter
+	local targetCharacter <const> = targetUser.getUsedCharacter
+	local sourcePeso = sourceCharacter.peso
+
+	if sourcePeso < amount then
+		Core.NotifyRightTip(_source, "No tienes suficientes pesos", 3000)
+		return TriggerClientEvent("vorp_inventory:ProcessingReady", _source)
+	end
+
+	if SvUtils.InProcessing(_source) then return end
+	SvUtils.ProcessUser(_source)
+
+	sourceCharacter.removeCurrency(3, amount)
+	targetCharacter.addCurrency(3, amount)
+	
+	-- Notificar a ambos clientes que el dinero se actualizó
+	TriggerClientEvent("vorpInventory:moneyUpdated", _source)
+	TriggerClientEvent("vorpInventory:moneyUpdated", target)
+
+	Core.NotifyRightTip(_source, "Has pagado " .. amount .. " pesos al ID: " .. target, 3000)
+	Core.NotifyRightTip(target, "Has recibido " .. amount .. " pesos del ID: " .. _source, 3000)
 
 	TriggerClientEvent("vorp_inventory:ProcessingReady", _source)
 	SvUtils.Trem(_source)
@@ -1002,7 +1088,8 @@ function InventoryService.shareMoneyPickupServer(data)
 	if not user then return end
 
 	local Character = user.getUsedCharacter
-	local amount = normalizePositiveInt(data.amount)
+	-- Usar normalizePositiveMoney para permitir decimales
+	local amount = normalizePositiveMoney(data.amount)
 	local position = data.position
 	local handle = data.handle
 	local money = Character.money
@@ -1013,6 +1100,10 @@ function InventoryService.shareMoneyPickupServer(data)
 	if amount > money then return end
 
 	Character.removeCurrency(0, amount)
+	
+	-- Notificar al cliente que el dinero se actualizó para refrescar el inventario
+	TriggerClientEvent("vorpInventory:moneyUpdated", _source)
+	
 	local uid = SvUtils.GenerateUniqueID()
 	TriggerClientEvent("vorpInventory:shareMoneyPickupClient", -1, handle, amount, position, uid, 1)
 
@@ -1049,13 +1140,18 @@ function InventoryService.shareGoldPickupServer(data)
 
 	local Character = user.getUsedCharacter
 	local gold = Character.gold
-	local amount = normalizePositiveInt(data.amount)
+	-- Usar normalizePositiveMoney para permitir decimales
+	local amount = normalizePositiveMoney(data.amount)
 	if not amount then
 		return
 	end
 	if amount > gold then return end
 
 	Character.removeCurrency(1, amount)
+	
+	-- Notificar al cliente que el oro se actualizó para refrescar el inventario
+	TriggerClientEvent("vorpInventory:moneyUpdated", _source)
+	
 	local uid = SvUtils.GenerateUniqueID()
 	TriggerClientEvent("vorpInventory:shareGoldPickupClient", -1, data.handle, amount, data.position, uid, 1)
 
@@ -1140,11 +1236,8 @@ function InventoryService.DropItem(itemName, itemId, amount, metadata, degradati
 	if SvUtils.InProcessing(_source) then return end
 	SvUtils.ProcessUser(_source)
 
-	local itemNameSafe = item:getName()
-	local metadataSafe = item:getMetadata()
-	local degradationSafe = item:getDegradation()
 	if not Config.DeleteOnlyDontDrop then
-		TriggerClientEvent("vorpInventory:createPickup", _source, itemNameSafe, amount, metadataSafe, 1, itemId, degradationSafe)
+		TriggerClientEvent("vorpInventory:createPickup", _source, itemName, amount, metadata, 1, itemId, degradation)
 	else
 		InventoryAPI.subItemID(_source, itemId, nil, false, amount)
 	end
@@ -1414,13 +1507,19 @@ function InventoryService.GiveItem(itemId, amount, target)
 	SvUtils.Trem(_source)
 end
 
+local cachedServerItemsPack = nil
+
 function InventoryService.getItemsTable()
 	local _source = source
 
 	if waitForServerItemsReady() then
-		local data = msgpack.pack(ServerItems)
+		-- Cache the packed msgpack since packing thousands of items for 100+ players on restart causes CPU spikes
+		if not cachedServerItemsPack then
+			cachedServerItemsPack = msgpack.pack(ServerItems)
+		end
+		
 		-- some people have thousands of items so use latent events.
-		TriggerLatentClientEvent("vorpInventory:giveItemsTable", _source, 500000, data)
+		TriggerLatentClientEvent("vorpInventory:giveItemsTable", _source, 500000, cachedServerItemsPack)
 	end
 end
 
@@ -1458,22 +1557,25 @@ function InventoryService.getInventoryForSource(_source)
 					local metadata = SharedUtils.MergeTables(dbItem.metadata, item.metadata)
 
 					if dbItem.maxDegradation ~= 0 then
-						if item.degradation == nil then
-							-- existing items with no degradation
-							item.degradation = os.time()
-							item.percentage = 100
+						local degNum = tonumber(item.degradation)
+						if not degNum or degNum <= 0 then
+							-- Si el item no tenía degradación registrada en base de datos
+							if item.percentage == 0 then
+								item.degradation = 0
+								item.percentage = 0
+							else
+								item.degradation = os.time()
+								item.percentage = 100
+							end
 						else
 							-- existing items with degradation
-							if item.degradation > 0 then
-								local isExpired = IsItemExpired(item.degradation, dbItem.maxDegradation)
-								if isExpired then
-									item.degradation = 0
-									item.percentage = 0
-								else
-									local elapsedTime = os.time() - item.degradation
-									item.degradation = os.time() - elapsedTime
-									item.percentage = dbItem:getPercentage(dbItem.maxDegradation, item.degradation)
-								end
+							local isExpired = IsItemExpired(degNum, dbItem.maxDegradation)
+							if isExpired then
+								item.degradation = 0
+								item.percentage = 0
+							else
+								item.degradation = degNum
+								item.percentage = dbItem:getPercentage(dbItem.maxDegradation, degNum)
 							end
 						end
 						-- need to update
@@ -1572,13 +1674,16 @@ AddEventHandler("onResourceStart", function(resourceName)
 		return
 	end
 
-	CreateThread(function()
-		repeat Wait(500) until waitForServerItemsReady()
-		Wait(1000)
-		for _, playerId in ipairs(GetPlayers()) do
-			InventoryService.getInventoryForSource(tonumber(playerId))
-		end
-	end)
+	-- The loop below is duplicate because server/restart_handler.lua already manages player
+	-- synchronization and forces clients to request their inventory during hot reload.
+	-- Leaving this loop causes a race condition and heavy load on the DB/server.
+	-- CreateThread(function()
+	-- 	repeat Wait(500) until waitForServerItemsReady()
+	-- 	Wait(1000)
+	-- 	for _, playerId in ipairs(GetPlayers()) do
+	-- 		InventoryService.getInventoryForSource(tonumber(playerId))
+	-- 	end
+	-- end)
 end)
 
 Core.Callback.Register("vorpinventory:getammoinfo", function(source, cb)

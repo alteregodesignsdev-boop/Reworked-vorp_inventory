@@ -47,14 +47,34 @@ function PostAction(eventName, itemData, id, propertyName, info) {
             },
 
             validate: function (value, item, type) {
-                if (!value || value <= 0 || value > Config.MaxItemTransferAmount || !isInt(value)) {
-                    $.post(`https://${GetParentResourceName()}/TransferLimitExceeded`, JSON.stringify({
-                        max: Config.MaxItemTransferAmount
-                    }));
-                                    
-                    dialog.close();
+                // Si el input está vacío, usar la cantidad máxima
+                let finalValue = value;
+                if (!value || value.trim() === "") {
+                    // Para items de dinero, usar el count directamente (ya está en dólares)
+                    finalValue = itemData.count;
+                }
+                
+                // Permitir decimales para items de dinero
+                if (type === "item_money") {
+                    const amount = parseFloat(finalValue);
+                    // Para dinero, validar contra el monto disponible
+                    if (!amount || amount <= 0 || amount > itemData.count) {
+                        dialog.close();
+                    } else {
+                        // Enviar en dólares directamente, sin convertir a centavos
+                        PostActionPostQty(eventName, itemData, id, propertyName, amount, info);
+                    }
                 } else {
-                    PostActionPostQty(eventName, itemData, id, propertyName, value, info);
+                    // Para items normales, validar que sea entero
+                    const intValue = parseInt(finalValue);
+                    if (!intValue || intValue <= 0 || intValue > Config.MaxItemTransferAmount || !isInt(finalValue)) {
+                        $.post(`https://${GetParentResourceName()}/TransferLimitExceeded`, JSON.stringify({
+                            max: Config.MaxItemTransferAmount
+                        }));
+                        dialog.close();
+                    } else {
+                        PostActionPostQty(eventName, itemData, id, propertyName, intValue, info);
+                    }
                 }
             },
         });
@@ -147,16 +167,22 @@ function initSecondaryInventoryHandlers() {
                             },
 
                             validate: function (value) {
-                                if (!value) {
+                                // Si el input está vacío, usar la cantidad máxima
+                                let finalValue = value;
+                                if (!value || value.trim() === "") {
+                                    finalValue = itemData.count;
+                                }
+                                
+                                if (!finalValue) {
                                     dialog.close();
                                     return;
                                 }
 
-                                if (!isInt(value)) {
+                                if (!isInt(finalValue)) {
                                     return;
                                 }
 
-                                takeFromStoreWithPrice(itemData, value);
+                                takeFromStoreWithPrice(itemData, parseInt(finalValue));
                             },
                         });
                     } else {
@@ -232,6 +258,16 @@ function initSecondaryInventoryHandlers() {
     }
 
     $("#secondInventoryElement").droppable({
+        over: function(event, ui) {
+            // Añadir borde rojo cuando se arrastra un item sobre el inventario secundario
+            $(this).find('.item').css({
+                'border': '2px dashed #DC143C'
+            });
+        },
+        out: function(event, ui) {
+            // Restaurar borde normal cuando se sale del inventario secundario
+            $(this).find('.item').css('border', '');
+        },
         drop: function (_, ui) {
             itemData = ui.draggable.data("item");
             itemInventory = ui.draggable.data("inventory");
@@ -269,19 +305,25 @@ function initSecondaryInventoryHandlers() {
                                 autofocus: "true",
                             },
                             validate: function (value, item, type) {
-                                if (!value) {
+                                // Si el input está vacío, usar la cantidad máxima
+                                let finalValue = value;
+                                if (!value || value.trim() === "") {
+                                    finalValue = itemData.count;
+                                }
+                                
+                                if (!finalValue) {
                                     dialog.close();
                                     return;
                                 }
 
-                                if (!isInt(value)) {
+                                if (!isInt(finalValue)) {
                                     return;
                                 }
 
                                 if (geninfo.isowner != 0) {
-                                    moveToStorePriceDialog(itemData, value);
+                                    moveToStorePriceDialog(itemData, parseInt(finalValue));
                                 } else {
-                                    moveToStore(itemData, value);
+                                    moveToStore(itemData, parseInt(finalValue));
                                 }
                             },
                         });
@@ -295,6 +337,9 @@ function initSecondaryInventoryHandlers() {
                     }
                 }
             }
+            
+            // Restaurar bordes después del drop
+            $(this).find('.item').css('border', '');
         },
     });
 }
@@ -311,18 +356,17 @@ function addDataToCustomInv(item, index) {
     $el.attr("data-inventory", "second");
 
     const itemElement = document.getElementById(`second-item-${index}`);
+    if (!itemElement) return;
 
     itemElement.addEventListener('mouseenter', () => {
-        const { label, description } = getItemMetadataInfo(item);
-        OverSetTitleSecond(label);
-        OverSetDescSecond(description);
+        if (typeof window.showItemInPanel === 'function') {
+            window.showItemInPanel($el);
+        } else {
+            const { label, description } = getItemMetadataInfo(item);
+            if (typeof OverSetTitle === 'function') OverSetTitle(label);
+            if (typeof OverSetDesc === 'function') OverSetDesc(description);
+        }
     });
-
-    itemElement.addEventListener('mouseleave', () => {
-        OverSetTitleSecond(" ");
-        OverSetDescSecond(" ");
-    });
-
 }
 
 /**
@@ -343,49 +387,87 @@ function loadCustomInventoryItems(item, index, group, count, limit) {
     if (item.type === "item_weapon") return;
 
     const { tooltipData, degradation, image, label, weight } = getItemMetadataInfo(item, true);
-    const itemWeight = getItemWeight(weight, 1);
+    
+    // Items de dinero tienen peso 0
+    const actualWeight = item.type === "item_money" ? 0 : weight;
+    const itemWeight = getItemWeight(actualWeight, 1);
+    
     const groupKey = getGroupKey(group);
     const { tooltipContent, url } = getItemTooltipContent(image, groupKey, group, limit, itemWeight, degradation, tooltipData);
 
-    $("#secondInventoryElement").append(`<div data-label='${label}' data-group ='${group}' style='background-image: ${url}; background-size: 4.5vw 7.7vh; background-repeat: no-repeat; background-position: center;' id="second-item-${index}" class='item' data-tooltip='${tooltipContent}'> ${count > 0 ? `<div class='count'>${count}</div>` : ``} </div>`);
+    $("#secondInventoryElement").append(`<div data-label='${label}' data-group ='${group}' style='background-image: ${url}, url("img/slot.png"); background-size: 4.2vw 6.5vh, 100% 100%; background-repeat: no-repeat, no-repeat; background-position: center, center;' id="second-item-${index}" class='item' data-tooltip='${tooltipContent}'> ${count > 0 ? `<div class='count'>${count}</div>` : ``} </div>`);
 
 }
 
 function loadCustomInventoryItemsWeapons(item, index, group) {
     if (item.type != "item_weapon") return;
 
-    const info = item.serial_number ? "<br>" + LANGUAGE.labels.ammo + item.count + "<br>" + LANGUAGE.labels.serial + item.serial_number : "";
+    const info = item.serial_number ? "<br>" + (LANGUAGE.labels?.serial ?? "Serial: ") + item.serial_number : "";
     const weight = getItemWeight(item.weight, item.count);
     const url = imageCache[item.name] || `url("img/items/${item.name}.png")`
 
     $("#secondInventoryElement").append(`<div data-label='${item.label}' data-group ='${group}'
-    style='background-image: ${url}; background-size: 4.5vw 7.7vh; background-repeat: no-repeat; background-position: center;' id='second-item-${index}' class='item' data-tooltip="${weight + info}"></div>`);
+    style='background-image: ${url}, url("img/slot.png"); background-size: 4.2vw 6.5vh, 100% 100%; background-repeat: no-repeat, no-repeat; background-position: center, center;' id='second-item-${index}' class='item' data-tooltip="${weight + info}"></div>`);
 
 }
 
 function secondInventorySetup(items, info) {
+    if (typeof window.clearItemPanel === 'function') {
+        window.clearItemPanel();
+    }
     $("#secondInventoryElement").html("").data("info", info);
     var divCount = 0;
 
     if (items.length > 0) {
-        $.each(items, function () {
-            divCount = divCount + 1;
-        });
-
-        for (const [index, item] of items.entries()) {
+        // Separar items de dinero de items normales
+        const moneyItems = [];
+        const normalItems = [];
+        
+        for (const item of items) {
+            if (item.type === "item_money") {
+                moneyItems.push(item);
+            } else {
+                normalItems.push(item);
+            }
+        }
+        
+        // Primero agregar items de dinero (no cuentan en slots)
+        for (const [index, item] of moneyItems.entries()) {
+            count = item.count;
+            const group = 1;
+            const limit = item.limit;
+            loadCustomInventoryItems(item, index, group, count, limit);
+            addDataToCustomInv(item, index);
+        }
+        
+        // Luego agregar items normales (sí cuentan en slots)
+        const moneyItemsCount = moneyItems.length;
+        for (const [idx, item] of normalItems.entries()) {
+            const index = idx + moneyItemsCount; // Offset por los items de dinero
             count = item.count;
             const group = item.type != "item_weapon" ? !item.group ? 1 : item.group : 5;
             const limit = item.limit;
             loadCustomInventoryItems(item, index, group, count, limit);
             loadCustomInventoryItemsWeapons(item, index, group);
             addDataToCustomInv(item, index);
-        };
+        }
     }
 
-    /* in here we ensure that at least all divs are filled */
-    if (divCount < 14) {
-        var emptySlots = 16 - divCount;
-        for (var i = 0; i < emptySlots; i++) {
+    // Contar solo items normales (no dinero) para los slots
+    const normalItemCount = $("#secondInventoryElement .item").not('[id^="second-item-"]').length + 
+                           $("#secondInventoryElement .item[id^='second-item-']").filter(function() {
+                               const item = $(this).data('item');
+                               return item && item.type !== 'item_money';
+                           }).length;
+    
+    // Asegurar que siempre haya 6 filas de 4 slots (24 slots totales) para items normales
+    const targetSlots = 24; // 6 filas x 4 columnas
+    const currentNormalSlots = normalItemCount;
+    
+    // Añadir slots vacíos hasta llegar a 24 (sin contar items de dinero)
+    if (currentNormalSlots < targetSlots) {
+        const emptySlots = targetSlots - currentNormalSlots;
+        for (let i = 0; i < emptySlots; i++) {
             $("#secondInventoryElement").append(`<div class='item' data-group='0'></div>`);
         }
     }

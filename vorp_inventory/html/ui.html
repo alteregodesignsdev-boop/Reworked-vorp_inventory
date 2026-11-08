@@ -26,61 +26,44 @@
           }
           #moveToggleBtn.active { background-color: #e6e6e6; }
 
-          /* Quickslot HUD overlay */
-        #quickslotHud {
-            position: fixed;
-            top: 8vh;
-            right: 2vw;
-            display: none;
-            grid-template-columns: repeat(4, 6vh);
-            gap: 1vh;
-            z-index: 10000;
-            pointer-events: none;
-          }
-          #quickslotHud .qs-slot {
-            width: 6vh;
-            height: 6vh;
-            background: rgba(0,0,0,0.35) center/contain no-repeat;
-            border: 1px solid rgba(255,255,255,0.25);
-            border-radius: 4px;
-            position: relative;
-          }
-          #quickslotHud .qs-count {
-            position: absolute;
-            bottom: -0.8vh;
-            right: -0.8vh;
-            background: rgba(0,0,0,0.6);
-            color: #fff;
-            font-size: 1.6vh;
-            padding: 0 .5vh;
-            border-radius: 2px;
-            min-width: 2vh;
-            text-align: center;
-          }
           /* Quickslot HUD styles han sido movidos a css/quickslots.css */
         </style>
         <link rel="stylesheet" href="css/quickslots.css" type="text/css" media="all" />
     </head>
     <body>
         <div id="inventoryHud">
+            <!-- Background image layer - first layer, behind everything -->
+            <div id="inventoryBackground"></div>
+            
             <div id="disabler"></div>
             <div id="ammobox"></div>
             <div id="hint"></div>
-            <div id="title">Satchel</div>
+            <!-- <div id="title">Satchel</div> -->
             <div class='tooltip' style='display: none; position: absolute; padding: 10px; background-color: black; color: white; border-radius: 5px;'>Tooltip content</div>
             <div id="inventoryElement">
             </div>
             <p id="information"></p>
             <p id="description"></p>
-            <div id="cash">
+            <div id="item-details-panel" style="display: none;"></div>
+            <div id="item-durability-panel" style="display: none;">
+                <div class="durability-label">DURABILIDAD</div>
+                <div class="durability-bar"></div>
+            </div>
+            <div id="item-actions-panel"></div>
+            <!-- Panel lateral para municiones adicionales de la cartuchera -->
+            <div id="gunbelt-ammo-panel" style="display: none;">
+                <div id="gunbelt-ammo-buttons"></div>
+            </div>
+            <!-- Elementos de dinero ocultos - ahora se muestran como items -->
+            <div id="cash" style="display: none;">
                 <a id="money-value"></a>
                 <a id="hint-money-value" class="dn"></a>
             </div>
-            <div id="gold">
+            <div id="gold" style="display: none;">
                 <a id="gold-value"></a>
                 <a id="hint-gold-value" class="dn"></a>
             </div>
-            <div id="rol">
+            <div id="rol" style="display: none;">
                 <a id="rol-value"></a>
                 <a id="hint-rol-value" class="dn"></a>
             </div>
@@ -88,15 +71,16 @@
                 <a id="id-value"></a>
             </div>
             <div class="mainButtonContainer">
-                <button class="mainButton" type="button" data-target="mainButton1" onclick="toggleDropdown('mainButton1')">
+                <button class="mainButton" type="button" data-target="mainButton1" onclick="toggleDropdown('mainButton1')" style="display: none;">
                 <img src="img/itemtypes/satchel_nav_kit.png" alt="Main Button Image">
                 </button>
-                <button class="mainButton" type="button" data-target="mainButton2" onclick="toggleDropdown('mainButton2')">
+                <!-- CLOTHING BUTTON HIDDEN -->
+                <button class="mainButton" type="button" data-target="mainButton2" onclick="toggleDropdown('mainButton2')" style="display: none;">
                 <img src="img/itemtypes/clothing.png" alt="Main Button Image">
                 </button>
-                <!-- Toggle HUD movement button -->
-                <button id="moveToggleBtn" class="mainButton" type="button" title="Mover inventario">
-                  <span class="toggle-icon" aria-hidden="true">⇲</span>
+                <!-- Crafting button -->
+                <button class="mainButton" type="button" id="craftingButton" onclick="toggleCraftingMenu()">
+                <img src="img/crafting-button.png" alt="Crafting">
                 </button>
             </div>
             <div class="imageButtonContainer">
@@ -107,7 +91,8 @@
                         <button class="carousel-control right" onclick="scrollCarousel('carousel1', 1)">&#10095;</button>
                     </div>
                 </div>
-                <div class="carouselWrapper">
+                <!-- CLOTHING CAROUSEL HIDDEN -->
+                <div class="carouselWrapper" style="display: none;">
                     <div class="carouselContainer" id="carousel2Container">
                         <button class="carousel-control left" onclick="scrollCarousel('carousel2', -1)">&#10094;</button>
                         <div class="dropdownButtonContainer mainButton2" id="carousel2">
@@ -177,6 +162,9 @@
             </div>
         </div>
         <div id="secondInventoryHud">
+            <!-- Background image layer - first layer, behind everything -->
+            <div id="secondInventoryBackground"></div>
+            
             <div id="titleHorse"></div>
             <div id="secondInventoryElement"></div>
             <p id="information2"></p>
@@ -186,7 +174,8 @@
                 <a id="current-cap-value"></a>/<a id="capacity-value"></a>
             </div>
 
-            <div class="imageButtonContainer1">
+            <!-- CAROUSEL HIDDEN -->
+            <div class="imageButtonContainer1" style="display: none;">
                 <div class="carouselWrapper1">
                     <div class="carouselContainer1">
                         <button class="carousel-control1 left" onclick="scrollCarousel('staticCarousel', -1)">&#10094;</button>
@@ -199,10 +188,29 @@
 
         <!-- Quickslot HUD overlay (independiente del inventario) -->
         <div id="quickslotHud" class="qs-top-right">
-          <div class="qs-slot" data-index="0"><div class="qs-count"></div></div>
-          <div class="qs-slot" data-index="1"><div class="qs-count"></div></div>
-          <div class="qs-slot" data-index="2"><div class="qs-count"></div></div>
-          <div class="qs-slot" data-index="3"><div class="qs-count"></div></div>
+          <!-- Background image for quickslots - editable independently -->
+          <div id="quickslotBackground"></div>
+          
+          <div class="qs-slot" data-index="0">
+            <div class="qs-item-image"></div>
+            <div class="qs-count"></div>
+          </div>
+          <div class="qs-slot" data-index="1">
+            <div class="qs-item-image"></div>
+            <div class="qs-count"></div>
+          </div>
+          <div class="qs-slot" data-index="2">
+            <div class="qs-item-image"></div>
+            <div class="qs-count"></div>
+          </div>
+          <div class="qs-slot" data-index="3">
+            <div class="qs-item-image"></div>
+            <div class="qs-count"></div>
+          </div>
+          <div class="qs-slot" data-index="4">
+            <div class="qs-item-image"></div>
+            <div class="qs-count"></div>
+          </div>
         </div>
 
         <div id="character-selection">
@@ -222,6 +230,29 @@
         <script type="text/javascript" src="js/utils.js"></script>
         <script type="text/javascript" src="js/script.js"></script>
         <script type="text/javascript" src="js/invScript.js"></script>
+        <script type="text/javascript" src="js/currency_formatter.js"></script>
         <script type="text/javascript" src="js/secondaryInvScript.js"></script>
+
+        <!-- Crafting Menu -->
+        <div id="craftingMenu" style="display: none;">
+            <div id="craftingBackground"></div>
+            <div id="craftingTitle">CRAFTING</div>
+            <div id="craftingList">
+                <!-- Recipes will be injected here via JS -->
+            </div>
+            <div id="crafting-transaction-loader" style="display:none;">
+                <div class="wrap-model">
+                    <div class="revolver">
+                        <section class="revolver-part"></section>
+                        <section class="revolver-part"></section>
+                        <section class="revolver-part"></section>
+                        <section class="revolver-part"></section>
+                        <section class="revolver-part"></section>
+                        <section class="revolver-part"></section>
+                    </div>
+                    <div id="crafting-loading-text">CRAFTING...</div>
+                </div>
+            </div>
+        </div>
     </body>
 </html>

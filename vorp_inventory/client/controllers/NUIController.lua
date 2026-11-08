@@ -5,6 +5,7 @@ RegisterNUICallback('UseItem', NUIService.NUIUseItem)
 RegisterNUICallback('sound', NUIService.NUISound)
 RegisterNUICallback('GiveItem', NUIService.NUIGiveItem)
 RegisterNUICallback('GetNearPlayers', NUIService.NUIGetNearPlayers)
+RegisterNUICallback('PackMoney', NUIService.NUIPackMoney) -- Nuevo callback para empaquetar dinero
 RegisterNUICallback('UnequipWeapon', NUIService.NUIUnequipWeapon)
 RegisterNUICallback('TakeFromCustom', NUIService.NUITakeFromCustom)
 RegisterNUICallback('MoveToCustom', NUIService.NUIMoveToCustom)
@@ -15,6 +16,7 @@ RegisterNUICallback('getActionsConfig', NUIService.getActionsConfig)
 RegisterNUICallback('ContextMenu', NUIService.ContextMenu)
 RegisterNUICallback('TransferLimitExceeded', NUIService.TransferLimitExceeded)
 RegisterNUICallback('SaveInventoryLayout', NUIService.SaveInventoryLayout)
+RegisterNUICallback('CraftItem', NUIService.NUICraftItem)
 
 --========================================================================--
 -- shared

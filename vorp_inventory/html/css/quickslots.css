@@ -3,16 +3,68 @@
 
 :root {
     --qs-top: 92vh;
-    --qs-right: 41.5vw;
+    --qs-right: calc(50vw - 21.5vh);
     --qs-bottom: auto;
     --qs-left: auto;
-    --qs-columns: 4;
+    --qs-columns: 5;
     --qs-size: 7vh;
     --qs-gap: 2vh;
     --qs-scale: 1;
     --qs-enter-duration: 240ms;     /* duración animación contenedor */
     --qs-slot-duration: 280ms;      /* duración animación de cada slot */
     --qs-enter-shift: 1.0vh;        /* desplazamiento vertical inicial */
+}
+
+/* Background image for quickslots - editable independently */
+#quickslotBackground {
+    position: absolute;
+    width: 50vh;
+    height: 10vh;
+    top: -2.5vh;
+    left: -3.5vh;
+    background-image: url("../img/selection_box_bg.png");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: 100% 100%;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Background animation when quickslot appears */
+@keyframes qsBackgroundSlideUp {
+    0% {
+        opacity: 0;
+        transform: translateY(3vh);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Background animation when quickslot disappears */
+@keyframes qsBackgroundSlideDown {
+    0% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(3vh);
+    }
+}
+
+#quickslotHud.qs-animate-enter #quickslotBackground {
+    animation: qsBackgroundSlideUp 0.3s ease-out both;
+}
+
+#quickslotHud.qs-animate-exit #quickslotBackground {
+    /* El background se anima después de que terminen los slots */
+    /* Último slot termina en: delay 1.5s + duration 1.2s = 2.7s */
+    animation: qsBackgroundSlideDown 0.3s ease-out both;
+    animation-delay: 1.6s;
 }
 
 /* Contenedor del HUD de quickslots */
@@ -40,55 +92,99 @@
 #quickslotHud .qs-slot {
   width: var(--qs-size);
   height: var(--qs-size);
-  background: rgba(0,0,0,0.35) center/contain no-repeat;
-  border: 1px solid rgba(255,255,255,0.25);
-  border-radius: 4px;
+  background-image: url("../img/slot.png");
+  background-color: transparent; /* Ensure no background color */
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 100% 100%;
+  border: none;
+  border-radius: 0; /* Remove rounded corners */
   position: relative;
+  top: -1vh;
+  box-sizing: border-box;
 }
 
-/* Contador de cada slot */
-#quickslotHud .qs-count {
+/* Item image layer - sits on top of background */
+#quickslotHud .qs-item-image {
   position: absolute;
-  bottom: calc(-0.8vh * var(--qs-scale));
-  right:  calc(-0.8vh * var(--qs-scale));
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  font-size: calc(1.6vh * var(--qs-scale));
-  padding: 0 .5vh;
-  border-radius: 2px;
-  min-width: 2vh;
-  text-align: center;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: contain;
+  pointer-events: none;
+}
+
+/* Hover effect - optional brightness increase */
+#quickslotHud .qs-slot:hover {
+  filter: brightness(1.2);
+}
+
+/* Contador de cada slot - ocultado según petición */
+#quickslotHud .qs-count {
+  display: none !important;
 }
 
 /* Animación de aparición del HUD */
 @keyframes qsHudEnter {
   0% {
     opacity: 0;
-    transform: translateY(calc(-1 * var(--qs-enter-shift))) scale(var(--qs-scale));
-    filter: blur(1px);
   }
   100% {
     opacity: 1;
-    transform: translateY(0) scale(var(--qs-scale));
-    filter: blur(0);
   }
 }
 
 #quickslotHud.qs-animate-enter {
-  animation: qsHudEnter var(--qs-enter-duration) ease-out both;
-  will-change: transform, opacity;
+  animation: qsHudEnter 0.3s ease-out both;
 }
 
-/* Animación de los slots con pequeño efecto pop/stagger */
-@keyframes qsSlotPop {
-  0% { opacity: 0; transform: scale(0.92); }
-  100% { opacity: 1; transform: scale(1); }
+/* Animación mejorada de los slots con efecto slide-up - igual que el background */
+@keyframes qsSlotSlideUp {
+  0% { 
+    opacity: 0; 
+    transform: translateY(3vh);
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0);
+  }
+}
+
+/* Animación de salida de los slots - inversa */
+@keyframes qsSlotSlideDown {
+  0% { 
+    opacity: 1; 
+    transform: translateY(0);
+  }
+  100% { 
+    opacity: 0; 
+    transform: translateY(3vh);
+  }
 }
 
 #quickslotHud.qs-animate-enter .qs-slot {
-  animation: qsSlotPop var(--qs-slot-duration) ease-out both;
+  opacity: 0;
+  animation: qsSlotSlideUp 1.2s ease-in-out both;
 }
-#quickslotHud.qs-animate-enter .qs-slot:nth-child(1) { animation-delay: 40ms; }
-#quickslotHud.qs-animate-enter .qs-slot:nth-child(2) { animation-delay: 80ms; }
-#quickslotHud.qs-animate-enter .qs-slot:nth-child(3) { animation-delay: 120ms; }
-#quickslotHud.qs-animate-enter .qs-slot:nth-child(4) { animation-delay: 160ms; }
+
+#quickslotHud.qs-animate-exit .qs-slot {
+  opacity: 1;
+  animation: qsSlotSlideDown 1.2s ease-in-out both;
+}
+
+/* Stagger animation for each slot - cada uno aparece después del otro */
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(2) { animation-delay: 0.3s; }
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(3) { animation-delay: 0.6s; }
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(4) { animation-delay: 0.9s; }
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(5) { animation-delay: 1.2s; }
+#quickslotHud.qs-animate-enter .qs-slot:nth-child(6) { animation-delay: 1.5s; }
+
+/* Stagger animation for exit - orden inverso, el último desaparece primero */
+#quickslotHud.qs-animate-exit .qs-slot:nth-child(6) { animation-delay: 0s; }
+#quickslotHud.qs-animate-exit .qs-slot:nth-child(5) { animation-delay: 0.3s; }
+#quickslotHud.qs-animate-exit .qs-slot:nth-child(4) { animation-delay: 0.6s; }
+#quickslotHud.qs-animate-exit .qs-slot:nth-child(3) { animation-delay: 0.9s; }
+#quickslotHud.qs-animate-exit .qs-slot:nth-child(2) { animation-delay: 1.2s; }

@@ -2,9 +2,9 @@ ServerItems = ServerItems or {}
 UsersWeapons = UsersWeapons or { default = {} }
 UsersWeapons.default = UsersWeapons.default or {}
 AmmoData = AmmoData or {}
+InventoryBeingUsed = InventoryBeingUsed or {}
 
 local Core <const>       = exports.vorp_core:GetCore()
-local InventoryBeingUsed = {}
 local T <const>          = TranslationInv.Langs[Lang]
 
 if Config.DevMode then
@@ -92,12 +92,15 @@ Core.Callback.Register("vorpinventory:get_slots", function(source, cb, _)
     local totalItems <const>     = InventoryAPI.getUserTotalCountItems(character.identifier, character.charIdentifier)
     local totalWeapons <const>   = InventoryAPI.getUserTotalCountWeapons(character.identifier, character.charIdentifier, true)
     local totalInvWeight <const> = (totalItems + totalWeapons)
+    
+    -- character.money ya está en dólares (no en centavos)
     return cb({
         totalInvWeight = totalInvWeight,
         slots = character.invCapacity,
         money = character.money,
         gold = character.gold,
-        rol = character.rol
+        rol = character.rol,
+        peso = character.peso or 0
     })
 end)
 
@@ -134,4 +137,45 @@ RegisterServerEvent("vorp_inventory:Server:SaveInventoryLayout", function(layout
         layout = layoutJson.layout or layoutJson
     end
     DBService.SaveInventoryLayout(char.identifier, char.charIdentifier, layout)
+end)
+
+RegisterNetEvent("vorp_inventory:server:ProcessCrafting", function(recipeId)
+    local src = source
+    local User = Core.getUser(src)
+    if not User then return end
+    local Character = User.getUsedCharacter
+    if not Character then return end
+
+    local recipe = nil
+    for _, r in ipairs(ConfigCrafting or {}) do
+        if r.id == recipeId then
+            recipe = r
+            break
+        end
+    end
+
+    if not recipe then return end
+
+    -- Verify materials
+    local hasAll = true
+    for _, mat in ipairs(recipe.materials) do
+        local count = exports.vorp_inventory:getItemCount(src, nil, mat.item)
+        if count < mat.count then
+            hasAll = false
+            break
+        end
+    end
+
+    if hasAll then
+        -- Remove materials
+        for _, mat in ipairs(recipe.materials) do
+            exports.vorp_inventory:subItem(src, mat.item, mat.count)
+        end
+        -- Add crafted item
+        Wait(recipe.craftTime or 0)
+        exports.vorp_inventory:addItem(src, recipe.itemToCraft, recipe.craftAmount)
+        Core.NotifyRightTip(src, "Crafteado: " .. recipe.label, 3000)
+    else
+        Core.NotifyRightTip(src, "No tienes los materiales necesarios.", 3000)
+    end
 end)

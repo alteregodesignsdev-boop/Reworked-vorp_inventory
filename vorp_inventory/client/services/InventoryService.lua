@@ -147,12 +147,30 @@ end
 
 			})
 			UserWeapons[newWeapon:getId()] = newWeapon
+		end
+	end
 
-			if newWeapon:getUsed() then
-					Utils.useWeapon(newWeapon:getId())
-				end
+	-- Equipar primero las armas principales y luego las secundarias (duales) ordenadamente
+	for _, weapon in pairs(UserWeapons) do
+		if weapon:getUsed() and not weapon:getUsed2() then
+			local success, err = pcall(function()
+				Utils.useWeapon(weapon:getId())
+			end)
+			if not success then
+				print("^1[InventoryService]^7 Error equipping primary weapon: " .. tostring(err))
 			end
 		end
+	end
+	for _, weapon in pairs(UserWeapons) do
+		if weapon:getUsed() and weapon:getUsed2() then
+			local success, err = pcall(function()
+				Utils.useWeapon(weapon:getId())
+			end)
+			if not success then
+				print("^1[InventoryService]^7 Error equipping secondary weapon: " .. tostring(err))
+			end
+		end
+	end
 	NUIService.RefreshQuickSlotsCache()
 end
 

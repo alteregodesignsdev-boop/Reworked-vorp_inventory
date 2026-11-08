@@ -43,3 +43,12 @@ end)
 exports("getServerItem", function(data)
     return Utils.GetServerItem(data)
 end)
+
+exports('unequipWeapon', function(weaponId)
+    if UserWeapons and UserWeapons[tonumber(weaponId)] then
+        UserWeapons[tonumber(weaponId)]:UnequipWeapon()
+        NUIService.LoadInv()
+        return true
+    end
+    return false
+end)

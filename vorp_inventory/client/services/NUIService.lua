@@ -16,6 +16,7 @@ local nextQuickSlotAt     = 0
 
 
 local QuickSlotsCache     = {}
+local QuickSlotsCacheReady = false
 
 RegisterNetEvent('inv:dropstatus', function(x)
 	candrop = x
@@ -24,6 +25,18 @@ end)
 RegisterNetEvent('inv:givestatus')
 AddEventHandler('inv:givestatus', function(x)
 	cangive = x
+end)
+
+-- Evento para actualizar el inventario cuando el dinero cambia
+RegisterNetEvent('vorpInventory:moneyUpdated')
+AddEventHandler('vorpInventory:moneyUpdated', function()
+	-- Solo actualizar si el inventario está abierto
+	if InInventory and NUIService and type(NUIService.LoadInv) == "function" then
+		-- Esperar un poco para asegurar que el StateBag se haya actualizado
+		SetTimeout(200, function()
+			NUIService.LoadInv()
+		end)
+	end
 end)
 
 function ApplyPosfx()
@@ -226,10 +239,36 @@ function NUIService.NUIGiveItem(obj)
 				local itemId = data2.id
 				local target = tonumber(data.player)
 
+				-- Manejar items de moneda (dollar, goldbar, rol_token)
 				if data2.type == "item_money" then
 					if isProcessingPay then return end
 					isProcessingPay = true
-					TriggerServerEvent("vorpinventory:giveMoneyToPlayer", target, tonumber(data2.count))
+					
+					-- El count ya está en dólares, no necesita conversión
+					local realAmount = tonumber(data2.count)
+					
+					-- Validación: No permitir dar $0
+					if realAmount <= 0 then
+						Core.NotifyRightTip("No puedes dar $0", 3000)
+						isProcessingPay = false
+						return
+					end
+					
+					-- Redondear a 2 decimales para evitar problemas de precisión
+					realAmount = math.floor(realAmount * 100 + 0.5) / 100
+					
+					if data2.item == "dollar" or data2.name == "dollar" then
+						TriggerServerEvent("vorpinventory:giveMoneyToPlayer", target, realAmount)
+					elseif data2.item == "goldbar" or data2.name == "goldbar" then
+						TriggerServerEvent("vorpinventory:giveGoldToPlayer", target, realAmount)
+					elseif data2.item == "peso" or data2.name == "peso" then
+						TriggerServerEvent("vorpinventory:givePesoToPlayer", target, realAmount)
+					elseif data2.item == "rol_token" or data2.name == "rol_token" then
+						-- Agregar evento para ROL si es necesario
+						Core.NotifyRightTip("No se puede transferir ROL tokens", 3000)
+						isProcessingPay = false
+						return
+					end
 				elseif Config.UseGoldItem and data2.type == "item_gold" then
 					if isProcessingPay then return end
 					isProcessingPay = true
@@ -260,9 +299,31 @@ function NUIService.NUIGiveItem(obj)
 	end
 end
 
+-- Función para empaquetar dinero en un sobre
+function NUIService.NUIPackMoney(obj, cb)
+	local reply = cb or function() end
+	local isvalid = Validator.IsValidNuiCallback(obj.hsn)
+	
+	if not isvalid then
+		return reply("ok")
+	end
+	
+	local amount = tonumber(obj.amount) or 0
+	local currency = obj.currency or "dollar"
+	
+	if amount <= 0 then
+		Core.NotifyRightTip("Cantidad inválida", 3000)
+		return reply("ok")
+	end
+	
+	TriggerServerEvent("vorpinventory:serverPackMoney", amount, currency)
+	return reply("ok")
+end
+
 function NUIService.NUIDropItem(obj, cb)
 	local reply = cb or function()
 	end
+	
 	if not candrop then
 		Core.NotifyRightTip(T.cantdrophere, 5000)
 		return reply("ok")
@@ -272,6 +333,7 @@ function NUIService.NUIDropItem(obj, cb)
 	if type(aux) ~= "table" then
 		return reply("ok")
 	end
+	
 	local isvalid = Validator.IsValidNuiCallback(aux.hsn)
 
 	if isvalid then
@@ -281,8 +343,31 @@ function NUIService.NUIDropItem(obj, cb)
 		local type = aux.type
 		local qty = tonumber(aux.number)
 		local degradation = aux.degradation
+		
+		-- Manejar items de moneda
 		if type == "item_money" then
-			TriggerServerEvent("vorpinventory:serverDropMoney", qty)
+			local realAmount = qty
+			
+			if realAmount <= 0 then
+				Core.NotifyRightTip("No puedes dropear $0", 3000)
+				return reply("ok")
+			end
+			
+			realAmount = math.floor(realAmount * 100 + 0.5) / 100
+			
+			if itemName == "dollar" or aux.name == "dollar" then
+				TriggerServerEvent("vorpinventory:serverDropMoney", realAmount)
+			elseif itemName == "goldbar" or aux.name == "goldbar" then
+				if Config.UseGoldItem then
+					TriggerServerEvent("vorpinventory:serverDropGold", realAmount)
+				end
+			elseif itemName == "rol_token" or aux.name == "rol_token" then
+				Core.NotifyRightTip("No se puede dropear ROL tokens", 3000)
+				return reply("ok")
+			elseif itemName == "peso" or aux.name == "peso" then
+				Core.NotifyRightTip("No se pueden dropear Pesos Mexicanos", 3000)
+				return reply("ok")
+			end
 		end
 
 		if Config.UseGoldItem then
@@ -372,6 +457,46 @@ local function addWardrobeInventoryItem(itemName, slotHash)
 	return equipped;
 end
 
+local function HasOffhandHolster(ped)
+	ped = ped or PlayerPedId()
+	if not ped or ped == 0 or not DoesEntityExist(ped) then return false end
+
+	-- 1. Verificación primaria mediante jo_libs component module
+	local success, hasEquipped = pcall(function()
+		local comp = exports.jo_libs:jo_component_get()
+		if comp and comp.isCategoryEquiped then
+			return comp.isCategoryEquiped(ped, "holsters_left") or comp.isCategoryEquiped(ped, "holsters_crossdraw")
+		end
+		return false
+	end)
+	if success and hasEquipped then
+		return true
+	end
+
+	-- 2. Verificación nativa directa Meta-Ped de RedM/RDR3
+	-- 0xB6B6122D = `holsters_left` (Cartuchera izquierda / off-hand)
+	-- 0x49C89D9B = `holsters_crossdraw` (Cartuchera de tiro cruzado)
+	if Citizen.InvokeNative(0xFB4891BD7578CDC1, ped, 0xB6B6122D) == 1 then
+		return true
+	end
+	if Citizen.InvokeNative(0xFB4891BD7578CDC1, ped, 0x49C89D9B) == 1 then
+		return true
+	end
+
+	-- 3. Fallback por escaneo de componentes adjuntos al ped
+	local numComps = Citizen.InvokeNative(0x90403E8107B60E81, ped)
+	if numComps and numComps > 0 then
+		for i = 0, numComps - 1 do
+			local cat = Citizen.InvokeNative(0xCCB97B51893C662F, ped, i, Citizen.ResultAsInteger())
+			if cat == 0xB6B6122D or cat == 0x49C89D9B then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
 local function useWeapon(data)
 	data.type = data.type or "item_weapon"
 	local now = GetGameTimer()
@@ -393,38 +518,56 @@ local function useWeapon(data)
 	local isWeaponAGun = Citizen.InvokeNative(0x705BE297EEBDB95D, weapName)
 	local isWeaponOneHanded = Citizen.InvokeNative(0xD955FEE4B87AFA07, weapName)
 	local isArmed = Citizen.InvokeNative(0xCB690F680A3EA971, ped, 4)
-	local notdual = false
-	if (isWeaponAGun and isWeaponOneHanded) and isArmed and not Config.DuelWield then
 	
-		if weaponHash == weapName then
-			UserWeapons[weaponId]:equipwep(true)
-		else
-			UserWeapons[weaponId]:equipwep()
+	-- Comprobar si ya tiene armas cortas de una mano equipadas (primaria y/o secundaria)
+	local hasPrimaryOneHanded = false
+	local hasSecondaryOneHanded = false
+	for id, w in pairs(UserWeapons) do
+		if id ~= weaponId and w:getUsed() then
+			local name = joaat(w:getName())
+			if Citizen.InvokeNative(0x705BE297EEBDB95D, name) and Citizen.InvokeNative(0xD955FEE4B87AFA07, name) then
+				if w:getUsed2() then
+					hasSecondaryOneHanded = true
+				else
+					hasPrimaryOneHanded = true
+				end
+			end
 		end
-		UserWeapons[weaponId]:loadComponents()
-		UserWeapons[weaponId]:setUsed(true)
-		TriggerServerEvent("syn_weapons:weaponused", data)
-	elseif (isWeaponAGun and isWeaponOneHanded) and isArmed and Config.DuelWield then
-		addWardrobeInventoryItem("CLOTHING_ITEM_M_OFFHAND_000_TINT_004", 0xF20B6B4A)
-		addWardrobeInventoryItem("UPGRADE_OFFHAND_HOLSTER", 0x39E57B01)
-		UserWeapons[weaponId]:setUsed2(true)
-		if weaponHash == weapName then
-			UserWeapons[weaponId]:equipwep(true)
-		else
-			UserWeapons[weaponId]:equipwep()
-		end
-		UserWeapons[weaponId]:loadComponents()
-		UserWeapons[weaponId]:setUsed(true)
-		TriggerServerEvent("syn_weapons:weaponused", data)
-	elseif (not isArmed) or (not UserWeapons[weaponId]:getUsed()) or Citizen.InvokeNative(0x30E7C16B12DA8211, weapName) then
-		notdual = true
 	end
 
-	if notdual then
+	if isWeaponAGun and isWeaponOneHanded then
+		if hasPrimaryOneHanded and hasSecondaryOneHanded then
+			TriggerEvent('vorp:NotifyLeft', "Armas", "Ya tienes el máximo de armas cortas equipadas.", "generic_textures", "lock", 4000, "COLOR_YELLOW")
+			nextUseAt = now + (Config.SpamDelay or 1000)
+			timerUse = 0
+			SendNUIMessage({ action = "setCooldown", delay = (Config.SpamDelay or 1000) })
+			NUIService.LoadInv()
+			return
+		elseif hasPrimaryOneHanded and Config.DuelWield then
+			if Config.RequireOffhandHolster and not HasOffhandHolster(ped) then
+				TriggerEvent('vorp:NotifyLeft', "Armas Duales", "No puedes llevar un arma secundaria sin tener equipada una cartuchera izquierda.", "generic_textures", "lock", 4000, "COLOR_RED")
+				nextUseAt = now + (Config.SpamDelay or 1000)
+				timerUse = 0
+				SendNUIMessage({ action = "setCooldown", delay = (Config.SpamDelay or 1000) })
+				NUIService.LoadInv()
+				return
+			end
+
+			UserWeapons[weaponId]:setUsed2(true)
+			UserWeapons[weaponId]:setUsed(true)
+			UserWeapons[weaponId]:equipwep()
+			UserWeapons[weaponId]:loadComponents()
+		else
+			UserWeapons[weaponId]:setUsed2(false)
+			UserWeapons[weaponId]:setUsed(true)
+			UserWeapons[weaponId]:equipwep()
+			UserWeapons[weaponId]:loadComponents()
+		end
+	else
+		UserWeapons[weaponId]:setUsed2(false)
+		UserWeapons[weaponId]:setUsed(true)
 		UserWeapons[weaponId]:equipwep()
 		UserWeapons[weaponId]:loadComponents()
-		UserWeapons[weaponId]:setUsed(true)
-		TriggerServerEvent("syn_weapons:weaponused", data)
 	end
 	if UserWeapons[weaponId]:getUsed() then
 		local serial = UserWeapons[weaponId]:getSerialNumber()
@@ -440,6 +583,28 @@ local function useWeapon(data)
 
 	NUIService.LoadInv()
 end
+
+-- Hilo de verificación automática: si el jugador se quita la cartuchera izquierda, se desequipa el arma secundaria
+CreateThread(function()
+	while true do
+		Wait(2000)
+		if Config.RequireOffhandHolster then
+			local ped = PlayerPedId()
+			if DoesEntityExist(ped) and not IsEntityDead(ped) then
+				local hasOffhand = HasOffhandHolster(ped)
+				if not hasOffhand and UserWeapons then
+					for _, weapon in pairs(UserWeapons) do
+						if weapon:getUsed2() then
+							weapon:UnequipWeapon()
+							TriggerEvent('vorp:NotifyLeft', "Armas Duales", "Te has quitado la cartuchera izquierda: arma secundaria desequipada.", "generic_textures", "lock", 4000, "COLOR_YELLOW")
+							NUIService.LoadInv()
+						end
+					end
+				end
+			end
+		end
+	end
+end)
 
 exports("useWeapon", useWeapon)
 
@@ -487,41 +652,77 @@ end
 
 local function loadItems()
 	local items = {}
+	
+	-- Protección: Verificar que UserInventory exista
+	if not UserInventory then
+		print("^3[NUIService]^7 loadItems: UserInventory is nil")
+		return items
+	end
+	
+	-- Protección: Usar pcall para cada item
 	if not StoreSynMenu then
 		for id, item in pairs(UserInventory) do
-			table.insert(items, item)
+			local success, err = pcall(function()
+				if item and item.maxDegradation and item.maxDegradation > 0 and item.degradation and tonumber(item.degradation) and tonumber(item.degradation) > 0 then
+					item.percentage = item:getPercentage()
+				end
+				table.insert(items, item)
+			end)
+			if not success then
+				print("^1[NUIService]^7 Error loading item " .. tostring(id) .. ": " .. tostring(err))
+			end
 		end
 	elseif StoreSynMenu then
 		for _, item in pairs(UserInventory) do
-			if item.metadata ~= nil and item.metadata.orgdescription ~= nil then
-				item.metadata.description = item.metadata.orgdescription
-				item.metadata.orgdescription = nil
+			local success, err = pcall(function()
+				if item.metadata ~= nil and item.metadata.orgdescription ~= nil then
+					item.metadata.description = item.metadata.orgdescription
+					item.metadata.orgdescription = nil
+				end
+			end)
+			if not success then
+				print("^1[NUIService]^7 Error processing item metadata: " .. tostring(err))
 			end
 		end
-
 
 		local buyitems = GenSynInfo.buyitems
 		if buyitems and next(buyitems) then
 			for _, item in pairs(UserInventory) do
-				for k, v in ipairs(buyitems) do
-					if item.name == v.name then
-						item.metadata = item.metadata or {}
-						if item.metadata.orgdescription == nil then
-							if item.metadata.description ~= nil then
-								item.metadata.orgdescription = item.metadata.description
+				local success, err = pcall(function()
+					for k, v in ipairs(buyitems) do
+						if item.name == v.name then
+							item.metadata = item.metadata or {}
+							if item.metadata.orgdescription == nil then
+								if item.metadata.description ~= nil then
+									item.metadata.orgdescription = item.metadata.description
+								else
+									item.metadata.orgdescription = ""
+								end
 							else
-								item.metadata.orgdescription = ""
 							end
-						else
+							item.metadata.description = T.cansell .. "<span style=color:Green;>" .. v.price .. "</span>"
 						end
-						item.metadata.description = T.cansell .. "<span style=color:Green;>" .. v.price .. "</span>"
 					end
+					if item and item.maxDegradation and item.maxDegradation > 0 and item.degradation and tonumber(item.degradation) and tonumber(item.degradation) > 0 then
+						item.percentage = item:getPercentage()
+					end
+					table.insert(items, item)
+				end)
+				if not success then
+					print("^1[NUIService]^7 Error processing store item: " .. tostring(err))
 				end
-				table.insert(items, item)
 			end
 		else
 			for _, item in pairs(UserInventory) do
-				table.insert(items, item)
+				local success, err = pcall(function()
+					if item and item.maxDegradation and item.maxDegradation > 0 and item.degradation and tonumber(item.degradation) and tonumber(item.degradation) > 0 then
+						item.percentage = item:getPercentage()
+					end
+					table.insert(items, item)
+				end)
+				if not success then
+					print("^1[NUIService]^7 Error loading item: " .. tostring(err))
+				end
 			end
 		end
 	end
@@ -530,28 +731,42 @@ end
 
 local function loadWeapons()
 	local weapons = {}
+	
+	-- Protección: Verificar que UserWeapons exista
+	if not UserWeapons then
+		print("^3[NUIService]^7 loadWeapons: UserWeapons is nil")
+		return weapons
+	end
+	
 	for _, currentWeapon in pairs(UserWeapons) do
-		local weapon = {}
-		weapon.count = currentWeapon:getTotalAmmoCount()
-		weapon.limit = -1
-		weapon.label = currentWeapon:getLabel()
-		weapon.name = currentWeapon:getName()
-		weapon.metadata = {}
-		weapon.hash = GetHashKey(currentWeapon:getName())
-		weapon.type = "item_weapon"
-		weapon.canUse = true
-		weapon.canRemove = true
-		weapon.id = currentWeapon:getId()
-		weapon.used = currentWeapon:getUsed()
-		weapon.used2 = currentWeapon:getUsed2()
-		weapon.desc = currentWeapon:getDesc()
-		weapon.group = 5
-		weapon.serial_number = currentWeapon:getSerialNumber()
-		weapon.custom_label = currentWeapon:getCustomLabel()
-		weapon.custom_desc = currentWeapon:getCustomDesc()
-		weapon.custom_label = currentWeapon:getCustomLabel()
-		weapon.weight = currentWeapon:getWeight()
-		table.insert(weapons, weapon)
+		-- Protección: Usar pcall para cada arma
+		local success, err = pcall(function()
+			local weapon = {}
+			weapon.count = currentWeapon:getTotalAmmoCount()
+			weapon.limit = -1
+			weapon.label = currentWeapon:getLabel()
+			weapon.name = currentWeapon:getName()
+			weapon.metadata = {}
+			weapon.hash = GetHashKey(currentWeapon:getName())
+			weapon.type = "item_weapon"
+			weapon.canUse = true
+			weapon.canRemove = true
+			weapon.id = currentWeapon:getId()
+			weapon.used = currentWeapon:getUsed()
+			weapon.used2 = currentWeapon:getUsed2()
+			weapon.desc = currentWeapon:getDesc()
+			weapon.group = 5
+			weapon.serial_number = currentWeapon:getSerialNumber()
+			weapon.custom_label = currentWeapon:getCustomLabel()
+			weapon.custom_desc = currentWeapon:getCustomDesc()
+			weapon.custom_label = currentWeapon:getCustomLabel()
+			weapon.weight = currentWeapon:getWeight()
+			table.insert(weapons, weapon)
+		end)
+		
+		if not success then
+			print("^1[NUIService]^7 Error loading weapon: " .. tostring(err))
+		end
 	end
 	return weapons
 end
@@ -562,9 +777,30 @@ local LocalInventoryLayout = nil
 
 local function loadItemsAndWeapons()
 	local itemsToSend = {}
-	local items = loadItems()
-	local weapons = loadWeapons()
-
+	
+	-- Protección: Usar pcall para cargar items y armas
+	local items = {}
+	local weapons = {}
+	
+	local success1, result1 = pcall(function()
+		return loadItems()
+	end)
+	
+	if success1 and result1 then
+		items = result1
+	else
+		print("^1[NUIService]^7 Error loading items: " .. tostring(result1))
+	end
+	
+	local success2, result2 = pcall(function()
+		return loadWeapons()
+	end)
+	
+	if success2 and result2 then
+		weapons = result2
+	else
+		print("^1[NUIService]^7 Error loading weapons: " .. tostring(result2))
+	end
 
 	if Config.InventoryOrder == "items" then
 		for _, item in pairs(items) do
@@ -749,7 +985,7 @@ local function buildQuickSlotsCacheBySlot(items, layout)
 	end
 	local used = {}
 	local cache = {}
-	for slotIndex = 1, 4 do
+	for slotIndex = 1, 5 do
 		local entry = entriesBySlot[-slotIndex]
 		local lk = normalizeLayoutKey(entry)
 		if lk and indicesByKey[lk] and #indicesByKey[lk] > 0 then
@@ -793,12 +1029,14 @@ function NUIService.RefreshQuickSlotsCache()
 			layout = serverLayout
 		end
 	end
-	local bySlot = buildQuickSlotsCacheBySlot(itemsAndWeapons, layout)
-	if bySlot then
-		QuickSlotsCache = bySlot
-	else
-		QuickSlotsCache = applyLayoutOrder(itemsAndWeapons, layout)
+	if not layout or type(layout) ~= "table" then
+		QuickSlotsCache = {}
+		QuickSlotsCacheReady = false
+		return
 	end
+	local bySlot = buildQuickSlotsCacheBySlot(itemsAndWeapons, layout)
+	QuickSlotsCache = bySlot or {}
+	QuickSlotsCacheReady = true
 end
 
 function NUIService.SaveInventoryLayout(data)
@@ -807,38 +1045,97 @@ function NUIService.SaveInventoryLayout(data)
 		LocalInventoryLayout = data.layout
 		local itemsAndWeapons = loadItemsAndWeapons()
 		local bySlot = buildQuickSlotsCacheBySlot(itemsAndWeapons, LocalInventoryLayout)
-		if bySlot then
-			QuickSlotsCache = bySlot
-		else
-			QuickSlotsCache = applyLayoutOrder(itemsAndWeapons, LocalInventoryLayout)
-		end
+		QuickSlotsCache = bySlot or {}
+		QuickSlotsCacheReady = true
 	end
 	TriggerServerEvent("vorp_inventory:Server:SaveInventoryLayout", json.encode(data))
 end
 
 function NUIService.LoadInv()
+	-- Protección contra llamadas durante reinicio
+	if not Core then 
+		print("^1[VORP Inventory]^7 LoadInv called but Core is not available (restart in progress?)")
+		return 
+	end
+	
 	local payload = {}
+	local result = nil
+	local moneyData = { money = 0, gold = 0, rol = 0 }
+	
+	-- Protección: Intentar obtener datos con timeout usando TriggerAsync en lugar de TriggerAwait
+	local callbackReceived = false
+	
+	Core.Callback.TriggerAsync("vorpinventory:get_slots", function(data)
+		if data then
+			result = data
+			moneyData = {
+				money = data.money or 0,
+				gold = data.gold or 0,
+				rol = data.rol or 0,
+				peso = data.peso or 0
+			}
+		end
+		callbackReceived = true
+	end, nil)
+	
+	-- Esperar con timeout de 2 segundos
+	local timeout = 0
+	while not callbackReceived and timeout < 20 do
+		Wait(100)
+		timeout = timeout + 1
+	end
+	
+	if not callbackReceived or not result then 
+		print("^3[VORP Inventory]^7 Timeout or no result from get_slots callback")
+		return 
+	end
 
-	Core.Callback.TriggerAsync("vorpinventory:get_slots", function(result)
-		if not result then return end
-
-		SendNUIMessage({ action = "changecheck", check = string.format("%.1f", result.totalInvWeight), info = string.format("%.1f", result.slots) })
-		SendNUIMessage({
-			action = "updateStatusHud",
-			show   = not IsRadarHidden(),
-			money  = result.money,
-			gold   = result.gold,
-			rol    = result.rol,
-			id     = GetPlayerServerId(PlayerId()),
-		})
-	end)
+	SendNUIMessage({ action = "changecheck", check = string.format("%.1f", result.totalInvWeight or 0), info = string.format("%.1f", result.slots or 0) })
+	
+	-- Mantener updateStatusHud para compatibilidad con otros scripts
+	SendNUIMessage({
+		action = "updateStatusHud",
+		show   = not IsRadarHidden(),
+		money  = result.money or 0,
+		gold   = result.gold or 0,
+		rol    = result.rol or 0,
+		id     = GetPlayerServerId(PlayerId()),
+	})
 
 	local itemsAndWeapons = loadItemsAndWeapons()
+
+	-- Agregar items de moneda al inventario
+	if CurrencyItemService and CurrencyItemService.AddCurrencyItemsToInventory then
+		local success2, newItems = pcall(function()
+			return CurrencyItemService.AddCurrencyItemsToInventory(itemsAndWeapons, moneyData)
+		end)
+		
+		if success2 and newItems then
+			itemsAndWeapons = newItems
+		else
+			print("^1[VORP Inventory]^7 Error adding currency items: " .. tostring(newItems))
+		end
+	end
 
 	payload.action = "setItems"
 	payload.timenow = GlobalState.TimeNow
 
-	local layout = Core.Callback.TriggerAwait("vorp_inventory:Server:GetInventoryLayout", nil)
+	-- Obtener layout con callback async y timeout
+	local layoutReceived = false
+	local layout = nil
+	
+	Core.Callback.TriggerAsync("vorp_inventory:Server:GetInventoryLayout", function(data)
+		layout = data
+		layoutReceived = true
+	end, nil)
+	
+	-- Esperar con timeout de 2 segundos
+	timeout = 0
+	while not layoutReceived and timeout < 20 do
+		Wait(100)
+		timeout = timeout + 1
+	end
+	
 	if layout and type(layout) == "table" then
 		LocalInventoryLayout = layout
 		itemsAndWeapons = applyLayoutOrder(itemsAndWeapons, layout)
@@ -846,11 +1143,8 @@ function NUIService.LoadInv()
 	end
 
 	local bySlot = buildQuickSlotsCacheBySlot(itemsAndWeapons, layout)
-	if bySlot then
-		QuickSlotsCache = bySlot
-	else
-		QuickSlotsCache = itemsAndWeapons
-	end
+	QuickSlotsCache = bySlot or {}
+	QuickSlotsCacheReady = type(layout) == "table"
 	payload.itemList = itemsAndWeapons
 
 	SendNUIMessage(payload)
@@ -903,6 +1197,7 @@ function NUIService.initiateData()
 			inventorymoneydescription = T.inventorymoneydescription,
 			givemoney = T.givemoney,
 			dropmoney = T.dropmoney,
+			packenvelope = T.packenvelope, -- Nueva traducción para empaquetar dinero
 			inventorygoldlabel = T.inventorygoldlabel,
 			inventorygolddescription = T.inventorygolddescription,
 			givegold = T.givegold,
@@ -913,6 +1208,7 @@ function NUIService.initiateData()
 			give = T.give,
 			drop = T.drop,
 			copyserial = T.copyserial,
+			durability = T.durability or (T.labels and T.labels.durability) or "Durabilidad",
 			labels = T.labels
 		},
 		config = {
@@ -987,7 +1283,7 @@ local function UseQuickSlot(slotIndex)
 		return
 	end
 	nextQuickSlotAt = now + 250
-	if not QuickSlotsCache or not QuickSlotsCache[1] then
+	if not QuickSlotsCacheReady then
 		NUIService.RefreshQuickSlotsCache()
 	end
 	local entry = QuickSlotsCache[slotIndex]
@@ -1013,49 +1309,75 @@ end
 
 RegisterCommand("vorp_inv_quick1", function()
     if InInventory then return end
-    SendNUIMessage({ action = "useQuickSlot", index = 0 })
+	UseQuickSlot(1)
 end, false)
 RegisterCommand("vorp_inv_quick2", function()
     if InInventory then return end
-    SendNUIMessage({ action = "useQuickSlot", index = 1 })
+	UseQuickSlot(2)
 end, false)
 RegisterCommand("vorp_inv_quick3", function()
     if InInventory then return end
-    SendNUIMessage({ action = "useQuickSlot", index = 2 })
+	UseQuickSlot(3)
 end, false)
 RegisterCommand("vorp_inv_quick4", function()
     if InInventory then return end
-    SendNUIMessage({ action = "useQuickSlot", index = 3 })
+	UseQuickSlot(4)
+end, false)
+RegisterCommand("vorp_inv_quick5", function()
+    if InInventory then return end
+	UseQuickSlot(5)
 end, false)
 
 if RegisterKeyMapping then
+	local keys = nil
+	if Config and type(Config.QuickslotUseKeys) == "table" then
+		keys = Config.QuickslotUseKeys
+	end
+	local key1 = type(keys) == "table" and tostring(keys[1] or "") or ""
+	local key2 = type(keys) == "table" and tostring(keys[2] or "") or ""
+	local key3 = type(keys) == "table" and tostring(keys[3] or "") or ""
+	local key4 = type(keys) == "table" and tostring(keys[4] or "") or ""
+	local key5 = type(keys) == "table" and tostring(keys[5] or "") or ""
+	if key1 == "" then key1 = "1" end
+	if key2 == "" then key2 = "2" end
+	if key3 == "" then key3 = "3" end
+	if key4 == "" then key4 = "4" end
+	if key5 == "" then key5 = "5" end
+
 	RegisterCommand("+vorp_inv_quick1", function()
 		if InInventory then return end
-		SendNUIMessage({ action = "useQuickSlot", index = 0 })
+		UseQuickSlot(1)
 	end, false)
 	RegisterCommand("-vorp_inv_quick1", function() end, false)
-	RegisterKeyMapping("+vorp_inv_quick1", "VORP Inventory: Quickslot 1", "keyboard", "1")
+	RegisterKeyMapping("+vorp_inv_quick1", "VORP Inventory: Quickslot 1", "keyboard", key1)
 
 	RegisterCommand("+vorp_inv_quick2", function()
 		if InInventory then return end
-		SendNUIMessage({ action = "useQuickSlot", index = 1 })
+		UseQuickSlot(2)
 	end, false)
 	RegisterCommand("-vorp_inv_quick2", function() end, false)
-	RegisterKeyMapping("+vorp_inv_quick2", "VORP Inventory: Quickslot 2", "keyboard", "2")
+	RegisterKeyMapping("+vorp_inv_quick2", "VORP Inventory: Quickslot 2", "keyboard", key2)
 
 	RegisterCommand("+vorp_inv_quick3", function()
 		if InInventory then return end
-		SendNUIMessage({ action = "useQuickSlot", index = 2 })
+		UseQuickSlot(3)
 	end, false)
 	RegisterCommand("-vorp_inv_quick3", function() end, false)
-	RegisterKeyMapping("+vorp_inv_quick3", "VORP Inventory: Quickslot 3", "keyboard", "3")
+	RegisterKeyMapping("+vorp_inv_quick3", "VORP Inventory: Quickslot 3", "keyboard", key3)
 
 	RegisterCommand("+vorp_inv_quick4", function()
 		if InInventory then return end
-		SendNUIMessage({ action = "useQuickSlot", index = 3 })
+		UseQuickSlot(4)
 	end, false)
 	RegisterCommand("-vorp_inv_quick4", function() end, false)
-	RegisterKeyMapping("+vorp_inv_quick4", "VORP Inventory: Quickslot 4", "keyboard", "4")
+	RegisterKeyMapping("+vorp_inv_quick4", "VORP Inventory: Quickslot 4", "keyboard", key4)
+
+	RegisterCommand("+vorp_inv_quick5", function()
+		if InInventory then return end
+		UseQuickSlot(5)
+	end, false)
+	RegisterCommand("-vorp_inv_quick5", function() end, false)
+	RegisterKeyMapping("+vorp_inv_quick5", "VORP Inventory: Quickslot 5", "keyboard", key5)
 end
 
 -- Tecla ALT (LALT): toggle HUD quickslots desde Lua (sin KeyMapping)
@@ -1177,6 +1499,7 @@ CreateThread(function()
 		[0x1CE6D9EB] = 2,
 		[0x4F49CC4C] = 3,
 		[0x8F9F9E58] = 4,
+		[0xAB62E997] = 5,
 	}
 	local groups = {0,1,2,3,4,5,6,7}
 	while true do
@@ -1287,3 +1610,37 @@ CreateThread(function()
         Wait(sleep)
     end
 end)
+
+function NUIService.NUICraftItem(data, cb)
+    if data and data.recipe then
+        CreateThread(function()
+            local ped = PlayerPedId()
+            local dict = "mech_inventory@crafting@fallbacks@in_hand@male_a"
+            local name = "craft_trans_stow"
+            
+            RequestAnimDict(dict)
+            while not HasAnimDictLoaded(dict) do Wait(10) end
+            
+            -- Reproducir animación
+            TaskPlayAnim(ped, dict, name, 8.0, -8.0, -1, 1, 0, true, 0, false, 0, false)
+            
+            TriggerServerEvent("vorp_inventory:server:ProcessCrafting", data.recipe)
+            
+            -- Obtener el tiempo de crafteo del cliente
+            local craftTime = 3000
+            if ConfigCrafting then
+                for _, r in ipairs(ConfigCrafting) do
+                    if r.id == data.recipe then
+                        craftTime = r.craftTime or 3000
+                        break
+                    end
+                end
+            end
+            
+            Wait(craftTime)
+            ClearPedTasks(ped)
+            RemoveAnimDict(dict)
+        end)
+    end
+    if cb then cb("ok") end
+end

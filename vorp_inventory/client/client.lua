@@ -4,7 +4,12 @@ AddEventHandler('onClientResourceStart', function(resourceName)
     end
 
     CreateThread(function()
-        repeat Wait(500) until LocalPlayer.state.IsInSession
+        -- Check if player is already in session (hot reload)
+        local isHotReload = LocalPlayer.state.IsInSession
+        
+        if not isHotReload then
+            repeat Wait(500) until LocalPlayer.state.IsInSession
+        end
 
         SendNUIMessage({ action = "hide" })
 
@@ -19,9 +24,27 @@ AddEventHandler('onClientResourceStart', function(resourceName)
         TriggerServerEvent("vorpCore:LoadAllAmmo")
         Wait(100)
         TriggerEvent("vorpinventory:loaded")
+        
+        -- Send crafting recipes to NUI
+        if ConfigCrafting then
+            SendNUIMessage({
+                action = "setCraftingRecipes",
+                recipes = ConfigCrafting
+            })
+        end
 
         if Config.DevMode then
             print("^1WARNING: Dev mode is enabled^7 do not use this in production live servers")
+        end
+        
+        if isHotReload then
+            print("^2[VORP Inventory]^7 Hot reload completed successfully")
+        end
+        
+        -- Iniciar el monitor de dinero después de que todo esté cargado
+        Wait(1000)
+        if CurrencyItemService and CurrencyItemService.StartMonitor then
+            CurrencyItemService.StartMonitor()
         end
     end)
 end)
