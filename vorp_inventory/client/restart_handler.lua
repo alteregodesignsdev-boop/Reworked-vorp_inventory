@@ -26,10 +26,6 @@ AddEventHandler('onResourceStop', function(resource)
         InInventory = false
     end
 
-    -- Stop any lingering screen blur postfx
-    if AnimpostfxIsRunning("OJDominoBlur") then
-        AnimpostfxStop("OJDominoBlur")
-    end
     
     -- Re-enable ALL controls immediately
     for i = 0, 255 do
@@ -65,10 +61,6 @@ RegisterNetEvent("vorp_inventory:Client:CleanupBeforeRestart", function()
         InInventory = false
     end
 
-    -- Stop any lingering screen blur postfx
-    if AnimpostfxIsRunning("OJDominoBlur") then
-        AnimpostfxStop("OJDominoBlur")
-    end
     
     -- Force close NUI
     SetNuiFocus(false, false)
@@ -165,10 +157,7 @@ end)
 AddEventHandler('onClientResourceStart', function(resource)
     if resource ~= resourceName then return end
 
-    -- Clear any active screen blur
-    if AnimpostfxIsRunning("OJDominoBlur") then
-        AnimpostfxStop("OJDominoBlur")
-    end
+
     
     -- Check if this is a hot reload (player already in session)
     if LocalPlayer.state.IsInSession then

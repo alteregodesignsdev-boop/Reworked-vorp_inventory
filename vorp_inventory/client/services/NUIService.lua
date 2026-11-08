@@ -215,9 +215,7 @@ end
 function NUIService.Start3DPlayerTargeting(obj, nearestPlayers)
 	isTargetingPlayer = true
 
-	if Config.Filter and AnimpostfxIsRunning(Config.Filter) then
-		AnimpostfxStop(Config.Filter)
-	end
+
 
 	local nuiReturn = {}
 	nuiReturn.action = "startPlayerTargeting"
