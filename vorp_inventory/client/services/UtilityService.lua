@@ -40,9 +40,13 @@ function Utils.useWeapon(id)
 		end
 		
 		if UserWeapons[id]:getUsed2() then
+			if NUIService and NUIService.AddWardrobeInventoryItem then
+				NUIService.AddWardrobeInventoryItem("CLOTHING_ITEM_M_OFFHAND_000_TINT_004", 0xF20B6B4A)
+				NUIService.AddWardrobeInventoryItem("UPGRADE_OFFHAND_HOLSTER", 0x39E57B01)
+			end
 			local weaponHash = joaat(UserWeapons[id]:getName())
-			GiveWeaponToPed(PlayerPedId, weaponHash, 0, false, true, 3, true, 0.5, 1.0, 752097756, false, 0.0, false)
-			SetCurrentPedWeapon(PlayerPedId, weaponHash, false, 3, false, false)
+			GiveWeaponToPed(PlayerPedId, weaponHash, 0, true, true, 3, false, 0.5, 1.0, 752097756, false, 0, false)
+			SetCurrentPedWeapon(PlayerPedId, weaponHash, false, 0, false, false)
 			SetPedAmmo(PlayerPedId, weaponHash, 0)
 			for _, ammo in pairs(UserWeapons[id]:getAllAmmo()) do
 				SetPedAmmoByType(PlayerPedId, joaat(_), ammo)
@@ -74,8 +78,8 @@ function Utils.oldUseWeapon(id)
 		end
 		
 		local weaponHash = joaat(UserWeapons[id]:getName())
-		GiveWeaponToPed(PlayerPedId, weaponHash, 0, false, true, 2, true, 0.5, 1.0, 752097756, false, 0.0, false)
-		SetCurrentPedWeapon(PlayerPedId, weaponHash, false, 2, false, false)
+		GiveWeaponToPed(PlayerPedId, weaponHash, 0, true, true, 2, false, 0.5, 1.0, 752097756, false, 0, false)
+		SetCurrentPedWeapon(PlayerPedId, weaponHash, false, 1, false, false)
 		SetPedAmmo(PlayerPedId, weaponHash, 0)
 		for type, amount in pairs(UserWeapons[id]:getAllAmmo()) do
 			SetPedAmmoByType(PlayerPedId, joaat(type), amount)

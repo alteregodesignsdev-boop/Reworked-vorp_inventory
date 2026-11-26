@@ -536,40 +536,73 @@ local function addWardrobeInventoryItem(itemName, slotHash)
 	local equipped = Citizen.InvokeNative(0x734311E2852760D0, inventoryId, itemData:Buffer(), true)
 	return equipped;
 end
+NUIService.AddWardrobeInventoryItem = addWardrobeInventoryItem
 
 local function HasOffhandHolster(ped)
 	ped = ped or PlayerPedId()
 	if not ped or ped == 0 or not DoesEntityExist(ped) then return false end
 
-	-- 1. Verificación primaria mediante jo_libs component module
-	local success, hasEquipped = pcall(function()
-		local comp = exports.jo_libs:jo_component_get()
-		if comp and comp.isCategoryEquiped then
-			return comp.isCategoryEquiped(ped, "holsters_left") or comp.isCategoryEquiped(ped, "holsters_crossdraw")
+	-- 1. Verificación en vorp_character (si está disponible)
+	local successVorp, vorpComp = pcall(function()
+		if exports['vorp_character'] and exports['vorp_character'].GetPlayerComponent then
+			local c1 = exports['vorp_character']:GetPlayerComponent('holsters_left')
+			if c1 and ((c1.comp and c1.comp ~= -1 and c1.comp ~= 0) or (c1.hash and c1.hash ~= 0)) then
+				return true
+			end
+			local c2 = exports['vorp_character']:GetPlayerComponent('Holster')
+			if c2 and ((c2.comp and c2.comp ~= -1 and c2.comp ~= 0) or (c2.hash and c2.hash ~= 0)) then
+				return true
+			end
 		end
 		return false
 	end)
-	if success and hasEquipped then
+	if successVorp and vorpComp then
 		return true
 	end
 
-	-- 2. Verificación nativa directa Meta-Ped de RedM/RDR3
-	-- 0xB6B6122D = `holsters_left` (Cartuchera izquierda / off-hand)
-	-- 0x49C89D9B = `holsters_crossdraw` (Cartuchera de tiro cruzado)
-	if Citizen.InvokeNative(0xFB4891BD7578CDC1, ped, 0xB6B6122D) == 1 then
-		return true
-	end
-	if Citizen.InvokeNative(0xFB4891BD7578CDC1, ped, 0x49C89D9B) == 1 then
+	-- 2. Verificación mediante jo_libs component module (si está disponible)
+	local successJo, joEquipped = pcall(function()
+		if exports.jo_libs and exports.jo_libs.jo_component_get then
+			local comp = exports.jo_libs:jo_component_get()
+			if comp and comp.isCategoryEquiped then
+				return comp.isCategoryEquiped(ped, "holsters_left") or comp.isCategoryEquiped(ped, "holsters_crossdraw") or comp.isCategoryEquiped(ped, "Holster")
+			end
+		end
+		return false
+	end)
+	if successJo and joEquipped then
 		return true
 	end
 
-	-- 3. Fallback por escaneo de componentes adjuntos al ped
-	local numComps = Citizen.InvokeNative(0x90403E8107B60E81, ped)
+	-- 3. Verificación nativa directa Meta-Ped de RedM/RDR3 (0xFB4891BD7578CDC1)
+	-- Soporta respuesta boolean (true) e integer (1)
+	local checkMetaPed = function(h)
+		local b = Citizen.InvokeNative(0xFB4891BD7578CDC1, ped, h)
+		if b == true or b == 1 then return true end
+		local i = Citizen.InvokeNative(0xFB4891BD7578CDC1, ped, h, Citizen.ResultAsInteger())
+		if i == 1 or i == true then return true end
+		return false
+	end
+
+	-- 0xB6B6122D / -1229581779 = holsters_left
+	-- 0x49C89D9B = holsters_crossdraw
+	if checkMetaPed(0xB6B6122D) or checkMetaPed(-1229581779) or checkMetaPed(0x49C89D9B) or checkMetaPed(1237884315) then
+		return true
+	end
+	if checkMetaPed(joaat("holsters_left")) or checkMetaPed(joaat("holsters_crossdraw")) then
+		return true
+	end
+
+	-- 4. Fallback por escaneo exhaustivo de componentes adjuntos al ped
+	local numComps = Citizen.InvokeNative(0x90403E8107B60E81, ped, Citizen.ResultAsInteger())
 	if numComps and numComps > 0 then
 		for i = 0, numComps - 1 do
 			local cat = Citizen.InvokeNative(0xCCB97B51893C662F, ped, i, Citizen.ResultAsInteger())
-			if cat == 0xB6B6122D or cat == 0x49C89D9B then
-				return true
+			if cat then
+				local catUnsigned = cat & 0xFFFFFFFF
+				if catUnsigned == 0xB6B6122D or catUnsigned == 0x49C89D9B or catUnsigned == 0xF7C3C7E6 or catUnsigned == 0x5E48A739 then
+					return true
+				end
 			end
 		end
 	end
@@ -598,8 +631,7 @@ local function useWeapon(data)
 	local isWeaponAGun = Citizen.InvokeNative(0x705BE297EEBDB95D, weapName)
 	local isWeaponOneHanded = Citizen.InvokeNative(0xD955FEE4B87AFA07, weapName)
 	local isArmed = Citizen.InvokeNative(0xCB690F680A3EA971, ped, 4)
-	
-	-- Comprobar si ya tiene armas cortas de una mano equipadas (primaria y/o secundaria)
+
 	local hasPrimaryOneHanded = false
 	local hasSecondaryOneHanded = false
 	for id, w in pairs(UserWeapons) do
@@ -615,39 +647,53 @@ local function useWeapon(data)
 		end
 	end
 
-	if isWeaponAGun and isWeaponOneHanded then
-		if hasPrimaryOneHanded and hasSecondaryOneHanded then
-			TriggerEvent('vorp:NotifyLeft', "Armas", "Ya tienes el máximo de armas cortas equipadas.", "generic_textures", "lock", 4000, "COLOR_YELLOW")
-			nextUseAt = now + (Config.SpamDelay or 1000)
+	local notdual = false
+	if (isWeaponAGun and isWeaponOneHanded) and hasPrimaryOneHanded and hasSecondaryOneHanded then
+		TriggerEvent('vorp:NotifyLeft', "Armas", "Ya tienes el máximo de armas cortas equipadas.", "generic_textures", "lock", 4000, "COLOR_YELLOW")
+		nextUseAt = now + (Config.SpamDelay or 2000)
+		timerUse = 0
+		SendNUIMessage({ action = "setCooldown", delay = (Config.SpamDelay or 2000) })
+		NUIService.LoadInv()
+		return
+	elseif (isWeaponAGun and isWeaponOneHanded) and (isArmed or hasPrimaryOneHanded) and not Config.DuelWield then
+		if weaponHash == weapName then
+			UserWeapons[weaponId]:equipwep(true)
+		else
+			UserWeapons[weaponId]:equipwep()
+		end
+		UserWeapons[weaponId]:loadComponents()
+		UserWeapons[weaponId]:setUsed(true)
+		TriggerServerEvent("syn_weapons:weaponused", data)
+	elseif (isWeaponAGun and isWeaponOneHanded) and (isArmed or hasPrimaryOneHanded) and Config.DuelWield then
+		if Config.RequireOffhandHolster and not HasOffhandHolster(ped) then
+			TriggerEvent('vorp:NotifyLeft', "Armas Duales", "No puedes llevar un arma secundaria sin tener equipada una cartuchera izquierda.", "generic_textures", "lock", 4000, "COLOR_RED")
+			nextUseAt = now + (Config.SpamDelay or 2000)
 			timerUse = 0
-			SendNUIMessage({ action = "setCooldown", delay = (Config.SpamDelay or 1000) })
+			SendNUIMessage({ action = "setCooldown", delay = (Config.SpamDelay or 2000) })
 			NUIService.LoadInv()
 			return
-		elseif hasPrimaryOneHanded and Config.DuelWield then
-			if Config.RequireOffhandHolster and not HasOffhandHolster(ped) then
-				TriggerEvent('vorp:NotifyLeft', "Armas Duales", "No puedes llevar un arma secundaria sin tener equipada una cartuchera izquierda.", "generic_textures", "lock", 4000, "COLOR_RED")
-				nextUseAt = now + (Config.SpamDelay or 1000)
-				timerUse = 0
-				SendNUIMessage({ action = "setCooldown", delay = (Config.SpamDelay or 1000) })
-				NUIService.LoadInv()
-				return
-			end
-
-			UserWeapons[weaponId]:setUsed2(true)
-			UserWeapons[weaponId]:setUsed(true)
-			UserWeapons[weaponId]:equipwep()
-			UserWeapons[weaponId]:loadComponents()
-		else
-			UserWeapons[weaponId]:setUsed2(false)
-			UserWeapons[weaponId]:setUsed(true)
-			UserWeapons[weaponId]:equipwep()
-			UserWeapons[weaponId]:loadComponents()
 		end
-	else
-		UserWeapons[weaponId]:setUsed2(false)
+
+		addWardrobeInventoryItem("CLOTHING_ITEM_M_OFFHAND_000_TINT_004", 0xF20B6B4A)
+		addWardrobeInventoryItem("UPGRADE_OFFHAND_HOLSTER", 0x39E57B01)
+		UserWeapons[weaponId]:setUsed2(true)
+		if weaponHash == weapName then
+			UserWeapons[weaponId]:equipwep(true)
+		else
+			UserWeapons[weaponId]:equipwep()
+		end
+		UserWeapons[weaponId]:loadComponents()
 		UserWeapons[weaponId]:setUsed(true)
+		TriggerServerEvent("syn_weapons:weaponused", data)
+	elseif (not isArmed and not hasPrimaryOneHanded) or (not UserWeapons[weaponId]:getUsed()) or Citizen.InvokeNative(0x30E7C16B12DA8211, weapName) then
+		notdual = true
+	end
+
+	if notdual then
 		UserWeapons[weaponId]:equipwep()
 		UserWeapons[weaponId]:loadComponents()
+		UserWeapons[weaponId]:setUsed(true)
+		TriggerServerEvent("syn_weapons:weaponused", data)
 	end
 	if UserWeapons[weaponId]:getUsed() then
 		local serial = UserWeapons[weaponId]:getSerialNumber()
@@ -666,20 +712,32 @@ end
 
 -- Hilo de verificación automática: si el jugador se quita la cartuchera izquierda, se desequipa el arma secundaria
 CreateThread(function()
+	Wait(15000) -- Margen para que cargue la ropa del personaje al conectar o aparecer
+	local missingHolsterTicks = 0
 	while true do
-		Wait(2000)
+		Wait(3000)
 		if Config.RequireOffhandHolster then
 			local ped = PlayerPedId()
 			if DoesEntityExist(ped) and not IsEntityDead(ped) then
 				local hasOffhand = HasOffhandHolster(ped)
-				if not hasOffhand and UserWeapons then
-					for _, weapon in pairs(UserWeapons) do
-						if weapon:getUsed2() then
-							weapon:UnequipWeapon()
+				if not hasOffhand then
+					missingHolsterTicks = missingHolsterTicks + 1
+					-- Requerir 2 comprobaciones consecutivas (6 segundos) sin cartuchera para evitar falsos positivos durante recargas de outfit
+					if missingHolsterTicks >= 2 and UserWeapons then
+						local unequipedAny = false
+						for _, weapon in pairs(UserWeapons) do
+							if weapon:getUsed2() then
+								weapon:UnequipWeapon()
+								unequipedAny = true
+							end
+						end
+						if unequipedAny then
 							TriggerEvent('vorp:NotifyLeft', "Armas Duales", "Te has quitado la cartuchera izquierda: arma secundaria desequipada.", "generic_textures", "lock", 4000, "COLOR_YELLOW")
 							NUIService.LoadInv()
 						end
 					end
+				else
+					missingHolsterTicks = 0
 				end
 			end
 		end
